@@ -1,9 +1,9 @@
 {
     "id": "datatype-fhir",
-    "name": "FHIR Data Type",
+    "name": "FHIR 数据类型",
     "version": "1.4.2",
     "author": "X Connections",
-    "description": "FHIR data type properties - web equivalent of the FHIR DataTypeClientPlugin.",
+    "description": "FHIR 数据类型属性 — FHIR DataTypeClientPlugin 的 Web 等效实现。",
     "oie": { "apiMin": "4.6" },
     "client": { "entry": "web/plugin.js" }
 }
