@@ -140,7 +140,7 @@ public final class FhirBundleSplitter {
         return parts;
     }
 
-    private static Document parse(String xml) throws Exception {
+    static Document parse(String xml) throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -178,11 +178,11 @@ public final class FhirBundleSplitter {
         return tail.trim().isEmpty() ? tail : "";
     }
 
-    private static String localName(Node node) {
+    static String localName(Node node) {
         return node.getLocalName() != null ? node.getLocalName() : node.getNodeName();
     }
 
-    private static List<Element> children(Element parent, String name) {
+    static List<Element> children(Element parent, String name) {
         List<Element> list = new ArrayList<>();
         for (Node n = parent.getFirstChild(); n != null; n = n.getNextSibling()) {
             if (n.getNodeType() == Node.ELEMENT_NODE && name.equals(localName(n))) {
@@ -192,7 +192,7 @@ public final class FhirBundleSplitter {
         return list;
     }
 
-    private static Element child(Element parent, String name) {
+    static Element child(Element parent, String name) {
         if (parent == null) {
             return null;
         }
@@ -200,7 +200,7 @@ public final class FhirBundleSplitter {
         return list.isEmpty() ? null : list.get(0);
     }
 
-    private static Element firstElement(Element parent) {
+    static Element firstElement(Element parent) {
         for (Node n = parent.getFirstChild(); n != null; n = n.getNextSibling()) {
             if (n.getNodeType() == Node.ELEMENT_NODE) {
                 return (Element) n;

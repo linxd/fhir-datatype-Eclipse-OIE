@@ -129,6 +129,7 @@ The other shared classes:
 | `FhirOperationOutcome` | Builds OperationOutcome JSON without HAPI. |
 | `FhirValidation` | The result of one validation: issues, valid or not, summary. |
 | `FhirBundleSplitter` | Splits a Bundle into one message per entry. Pure Java. |
+| `FhirResourceTypes` | The *Resource Types* check: the type of the message and of its Bundle entries against the list. Pure Java. |
 | `FhirTools` | Static functions for channel scripts. |
 | `FhirEngine`, `FhirEngineLoader` | The boundary to HAPI FHIR; see [The isolated FHIR engine](#the-isolated-fhir-engine). |
 | `FhirVocabulary` | Required by the engine; adds no descriptions. |
@@ -140,7 +141,7 @@ The other shared classes:
 ```
 inbound message (FHIR JSON or XML)
    │
-   ├─ populateMetaData()              resource type, version, inbound validation
+   ├─ populateMetaData()              resource type, version, Resource Types check, inbound validation
    │                                  → connector map fhirValid, fhirIssueCount, fhirIssues, fhirOperationOutcome
    │
    ├─ with filter/transformer steps, Transformer Format XML:
@@ -173,6 +174,8 @@ Points worth knowing:
 - **JSON to transformer XML is pure Java** (`FhirXml.jsonToXml`), so the transformer sees exactly what came in: property order kept, nothing added or dropped. The way back uses HAPI with a `StrictErrorHandler`, so an element that is not in the specification is refused instead of silently dropped.
 - **XML after a transformer is written again** (`reorderXml`) because E4X appends elements at the end, and FHIR XML requires the order of the specification.
 - **In the Administrator** (`FhirEngineLoader.isServer()` is false) validation is skipped and HAPI is never loaded.
+- **Resource Types comes before validation.** `inboundValidation` first checks the list (`FhirResourceTypes.check`). A refused message gets one error issue per resource of a wrong type, wrapped in a `FhirValidation`, and is not validated further. Because it is a `FhirValidation`, *Invalid Messages*, the connector map and the auto responder treat it like any validation error. With a list set, `isSerializationRequired(true)` is true also when *Validate Inbound* is off, so the engine still calls the serializer. Like validation, the check is skipped in the Administrator.
+- **Resource Types comes before validation.** `inboundValidation` first checks the list (`FhirResourceTypes.check`); a refused message gets one error issue per wrong resource, wrapped in a `FhirValidation`, and is not validated further. Because it is a `FhirValidation`, *Invalid Messages*, the connector map and the auto responder treat it like any validation error. With a list set, `isSerializationRequired(true)` is true also when *Validate Inbound* is off, so the engine calls the serializer. Like validation, it is skipped in the Administrator.
 
 ## The isolated FHIR engine
 
@@ -215,7 +218,7 @@ System properties for development:
 
 The instance validator refuses unknown profiles, accepts unknown extensions when the property says so, and ignores best-practice warnings (such as dom-6, "should have narrative"), which would flag nearly every message.
 
-Building a validator takes seconds, so validators are cached per combination of options. The required profile is passed per call and is not part of the cache key. `FhirSerializer` starts building in a background thread (`warmUp`) when a channel with validation is deployed, so the first message does not wait as long.
+Building a validator takes seconds, so validators are cached per combination of options. The required profile is passed per call and is not part of the cache key. *Resource Types* is not an engine option either: it does not change what the validator loads, so channels with different lists share one validator. Issue #25 proposed loading only the StructureDefinitions of the listed types, but the validator asks for all StructureDefinitions at once (`fetchAllStructureDefinitions`) and terminology is already read on demand since 1.5.1, so a list would hardly save memory and a missing data type or profile would give confusing errors (see [lazy-loading-measurement.md](lazy-loading-measurement.md)). `FhirSerializer` starts building in a background thread (`warmUp`) when a channel with validation is deployed, so the first message does not wait as long.
 
 **The specification (`LazySpecificationSupport`).** The heap goes to the specification, not to the validators. HAPI's `DefaultProfileValidationSupport` parses all of it up front and keeps it in a static map per FHIR version (`ourImplementations`): R4 190 MB, R5 520 MB with HAPI 8.12.1. The validator asks for all StructureDefinitions at once, but for ValueSets and CodeSystems one URL at a time. Since 1.5.1, `LazySpecificationSupport` takes the place of HAPI's support: it parses the StructureDefinitions, keeps ValueSets and CodeSystems as gzipped JSON (a few MB), and parses one the first time the validator asks for it. It reads the same files in the same order as HAPI (`DefaultProfileValidationSupportBundleStrategy` for R4 and R4B, which also uses the v2 and v3 tables of R4; the three packages of `DefaultProfileValidationSupportNpmStrategy` for R5), a later resource with the same URL replacing an earlier one. It does not override `isValueSetSupported` / `isCodeSystemSupported`, just like HAPI's support; doing so changes how the chain routes code validation. Result: R5 300 MB, R4 130 MB. `LazySpecificationTest` checks that R4, R4B and R5 give exactly the same issues as HAPI's own support for 40 messages; the measurement is in [lazy-loading-measurement.md](lazy-loading-measurement.md).
 
@@ -245,7 +248,7 @@ Channels are stored with XStream, which **does not run constructors**. A propert
 
 1. Add the field with its default to `FhirSerializationProperties` (or `FhirBatchProperties`), with a null-safe getter.
 2. Add it to `getPropertyDescriptors()` (label and tooltip in the Swing Administrator) and `setProperties()`.
-3. If the engine needs it, add an option key to `FhirEngine` and put it in `engineOptions()`. It then automatically becomes part of the validator cache key.
+3. If the engine needs it, add an option key to `FhirEngine` and put it in `engineOptions()`. It then automatically becomes part of the validator cache key. Leave out what does not change the validator (such as *Required Profile* and *Resource Types*): every distinct set of options builds and keeps a validator of its own.
 4. Add it to `webadmin/web/plugin.js`, with the same key, label, default and tooltip.
 5. Document it in the README's property table.
 6. Test that a channel saved with the previous version still deploys.
@@ -298,11 +301,12 @@ Versions that must match the engine:
 mvn test
 ```
 
-There are 83 tests (JUnit 4). They run without OIE: the engine jars are on the test classpath, and the tests that need HAPI set `fhir.engine.direct=true`, so HAPI is loaded from the Maven classpath instead of `lib/`.
+There are 97 tests (JUnit 4). They run without OIE: the engine jars are on the test classpath, and the tests that need HAPI set `fhir.engine.direct=true`, so HAPI is loaded from the Maven classpath instead of `lib/`.
 
 | Test | Covers |
 | --- | --- |
 | `FhirSerializerTest` | Inbound and outbound conversion, validation, reject and accept, element order, DOCTYPE refusal. |
+| `FhirResourceTypesTest` | *Resource Types*: the list, root and Bundle entry checks in JSON and XML, reject and accept, without validation, the auto response, channels saved without the property, and that the validator cache key is unchanged. |
 | `FhirXmlTest` | Format detection, JSON to XML, namespaces, `hasDoctype`. |
 | `FhirToolsTest` | The script functions. |
 | `FhirTransformerJsonTest` | Transformer Format JSON: the transformer script run in Rhino as the engine builds it, XML and JSON in and out, misspelled elements. |
