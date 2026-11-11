@@ -5,7 +5,7 @@
   "description": "HL7 FHIR data type: FHIR JSON and XML in, FHIR XML in the transformer, JSON or XML out, with validation against the FHIR R4, R4B or R5 specification and your own profiles and packages (e.g. Nictiz zib2020), powered by HAPI FHIR.",
   "type": "datatype",
   "ui": ["web", "swing"],
-  "version": "1.6.0",
+  "version": "1.6.1",
   "minEngineVersion": "4.6.0",
   "maxEngineVersion": null,
   "filename": "datatype-fhir-{version}.zip",

@@ -5,13 +5,11 @@
 #
 #   valid Patient (JSON)      200, OperationOutcome in JSON
 #   valid Patient (XML)       200, OperationOutcome in XML
-#   invalid Patient           rejected, the validation issues
-#   Observation               rejected, "not in Resource Types"
+#   invalid Patient           400, the validation issues
+#   Observation               400, "not in Resource Types"
 #
-# Rejected messages get HTTP 500, not the documented 400: the ${fhirHttpStatus} and
-# ${fhirContentType} that FhirAutoResponder puts in the channel map do not reach the HTTP
-# Listener (it reads the processed message, the auto responder gets an earlier copy of the source
-# message), issue #33. Change REJECTED_STATUS and check the Content-Type when that is fixed.
+# each with the status and Content-Type the auto responder sets (${fhirHttpStatus},
+# ${fhirContentType} in the listener's response settings, #33).
 #
 # This covers what the unit tests cannot: the engine loads the extension (exact mirthVersion),
 # HAPI runs in the plugin's isolated lib/ class loader, and the heap is enough.
@@ -154,11 +152,10 @@ cat > "${work}/observation.json" <<'JSON'
 {"resourceType":"Observation","status":"final","code":{"coding":[{"system":"http://loinc.org","code":"8867-4"}]}}
 JSON
 
-REJECTED_STATUS=500 # should be 400: issue #33
-post patient-json application/fhir+json "${repo}/examples/patient.json" 200 '"resourceType":"OperationOutcome"'
-post patient-xml application/fhir+xml "${work}/patient.xml" 200 '<OperationOutcome'
-post invalid-patient application/fhir+json "${repo}/examples/patient-invalid.json" "${REJECTED_STATUS}" 'shoeSize'
-post observation application/fhir+json "${work}/observation.json" "${REJECTED_STATUS}" 'Resource type Observation is not in Resource Types (Patient)'
+post patient-json application/fhir+json "${repo}/examples/patient.json" 200 '"resourceType":"OperationOutcome"' application/fhir+json
+post patient-xml application/fhir+xml "${work}/patient.xml" 200 '<OperationOutcome' application/fhir+xml
+post invalid-patient application/fhir+json "${repo}/examples/patient-invalid.json" 400 'shoeSize' application/fhir+json
+post observation application/fhir+json "${work}/observation.json" 400 'Resource type Observation is not in Resource Types (Patient)' application/fhir+json
 
 if grep -E "FHIR engine is not available|NoClassDefFoundError|ClassNotFoundException|OutOfMemoryError" "${oie}/logs/mirth.log" "${work}/server.out" 2>/dev/null; then
   fail "the server log shows a class loading or memory problem"

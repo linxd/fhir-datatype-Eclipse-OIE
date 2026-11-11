@@ -257,7 +257,7 @@ Channels are stored with XStream, which **does not run constructors**. A propert
 
 **Batch.** With *Process Batch* on, the engine asks `FhirDataTypeServerPlugin.getBatchAdaptorFactory` for an adaptor. `FhirBatchAdaptor` either splits with `FhirBundleSplitter` (*Bundle Entry*) or runs the user's split script (*JavaScript*, modelled on the engine's other batch adaptors). The source map variables (`fhirBundleType`, `fhirEntryIndex`, ...) are set in an overridden `getMessage()`, because the source connector copies the batch message's source map right after that call while `getNextMessage` already reads ahead.
 
-**Responses.** For *Auto-generate* source responses, `FhirAutoResponder` returns an OperationOutcome in the format of the incoming message, and puts `fhirHttpStatus` (200, 400, 500) and `fhirContentType` in the channel map for the HTTP Listener.
+**Responses.** For *Auto-generate* source responses, `FhirAutoResponder` returns an OperationOutcome in the format of the incoming message, and puts `fhirHttpStatus` (200, 400, 500) and `fhirContentType` in the channel map and the source map for the HTTP Listener. The source map is needed ([#33](https://github.com/matthydehoog/fhir-datatype-Eclipse-OIE/issues/33)): the listener resolves `${...}` from `Message.getMergedConnectorMessage()`, which the engine builds once and caches when the postprocessor runs, before the response is generated. That merged message has a *copy* of the channel map, but the source connector message's own source map. The engine gives the source connector a read-only view of that map (`Collections.unmodifiableMap`), so `FhirAutoResponder.writable` writes to the map behind it by reflection. That needs `java.util` opened to the plugin, which OIE's launcher does (`--add-opens=java.base/java.util=ALL-UNNAMED` in `conf/default_modules.vmoptions`; Surefire gets the same option in `pom.xml`). Without it the listener falls back to 200, or 500 for an error. The smoke test checks it on every engine version.
 
 ## Code templates and the web administrator
 
@@ -301,7 +301,7 @@ Versions that must match the engine:
 mvn test
 ```
 
-There are 97 tests (JUnit 4). They run without OIE: the engine jars are on the test classpath, and the tests that need HAPI set `fhir.engine.direct=true`, so HAPI is loaded from the Maven classpath instead of `lib/`.
+There are 98 tests (JUnit 4). They run without OIE: the engine jars are on the test classpath, and the tests that need HAPI set `fhir.engine.direct=true`, so HAPI is loaded from the Maven classpath instead of `lib/`.
 
 | Test | Covers |
 | --- | --- |
@@ -339,8 +339,6 @@ SMOKE_HTTP_PORT=18080 SMOKE_HTTPS_PORT=18443 SMOKE_LISTENER_PORT=18090 \
 ```
 
 It downloads the engine (about 240 MB, kept in `~/.cache/oie` or `OIE_DOWNLOADS`), unpacks it in a temporary folder (`SMOKE_DIR`) and stops it afterwards. It never touches an installed engine.
-
-**Known ([#33](https://github.com/matthydehoog/fhir-datatype-Eclipse-OIE/issues/33)):** rejected messages get HTTP 500 instead of 400. The `fhirHttpStatus` and `fhirContentType` that `FhirAutoResponder` puts in the channel map do not reach the HTTP Listener, which reads the processed message while the auto responder gets an earlier copy of the source message. The smoke test checks the current behaviour (`REJECTED_STATUS`); change it when that is fixed.
 
 **Dependabot** (`.github/dependabot.yml`) opens weekly pull requests for Maven dependencies and monthly ones for the GitHub Actions. HAPI FHIR and `org.hl7.fhir.core` come as one group; follow *Updating HAPI FHIR* under [Dependencies](#dependencies) before merging. The engine jars and the libraries the engine already ships (Log4j, commons-lang3, Rhino, XStream) are ignored: they must match the engine, not the newest version.
 
