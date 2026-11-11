@@ -34,6 +34,7 @@ OIE's default heap is only 256 MB (`-Xmx256m` in `conf/base_includes.vmoptions`,
 | Property | Default | What it does |
 | --- | --- | --- |
 | FHIR Version | R4 | The FHIR version of the messages: R4, R4B or R5. Used for validation and for converting between JSON and XML; profile packages must be for the same version. |
+| Resource Types | empty | The resource types the connector accepts, separated by commas, e.g. `Patient, Observation, Bundle`. A message of another type, or a Bundle with an entry of another type, is invalid; see [Resource Types](#resource-types). Empty accepts every type. |
 | Transformer Format | XML | What the transformer works on: FHIR XML with E4X, or a JavaScript object of the FHIR JSON (see [JSON in the transformer](#json-in-the-transformer)). |
 | Strip Namespaces | on | With Transformer Format XML: removes the FHIR namespace from the transformer XML (the XHTML namespace of `text.div` stays) and puts it back afterwards. |
 | Output Format | JSON | FHIR JSON or FHIR XML for the outbound message. Both are written by the FHIR engine in the element order of the specification. |
@@ -73,6 +74,21 @@ if ($('fhirValid') == false) {
 }
 return true;
 ```
+
+### Resource Types
+
+*Resource Types* limits the resource types a connector accepts, for example `Patient, Observation, Bundle`. A message of another type is invalid with one error, for example:
+
+```
+error Encounter: Resource type Encounter is not in Resource Types (Patient, Observation, Bundle)
+```
+
+- For a Bundle, every `Bundle.entry.resource` is checked too (also those of a Bundle inside an entry), so the list needs `Bundle` and the types of its entries. The error names the entry: `Bundle.entry[1].resource`.
+- *Invalid Messages* decides what happens, as for validation errors: *Reject* gives status ERROR (and HTTP `400` with an auto-generated response), *Accept* processes the message with `fhirValid` = `false` and the error in `fhirIssues` and `fhirOperationOutcome`.
+- A refused message is not validated further. An accepted type is validated as without the property.
+- The check also works with *Validate Inbound* off. The connector map then only gets the validation variables for a refused message.
+- Names are case-sensitive and may be separated by commas, semicolons or spaces. Contained resources are not checked. With *Process Batch* each entry is its own message and is checked on its own.
+- It is a check on the input, not a memory saving: the validator loads the whole specification of the *FHIR Version* whatever the list is (see the [development guide](docs/development.md#validation)).
 
 ## Batch processing
 

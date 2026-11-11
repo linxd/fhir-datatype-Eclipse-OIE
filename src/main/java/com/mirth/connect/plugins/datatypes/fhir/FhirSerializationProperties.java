@@ -51,6 +51,7 @@ public class FhirSerializationProperties extends SerializationProperties {
     }
 
     private FhirVersion fhirVersion = FhirVersion.R4;
+    private String resourceTypes = "";
     private TransformerFormat transformerFormat = TransformerFormat.XML;
     private Boolean stripNamespaces = Boolean.TRUE;
     private OutputFormat outputFormat = OutputFormat.JSON;
@@ -71,6 +72,7 @@ public class FhirSerializationProperties extends SerializationProperties {
     public Map<String, DataTypePropertyDescriptor> getPropertyDescriptors() {
         Map<String, DataTypePropertyDescriptor> p = new LinkedHashMap<>();
         p.put("fhirVersion", new DataTypePropertyDescriptor(getFhirVersion(), "FHIR Version", "The FHIR version of the messages: R4 (4.0.1), R4B (4.3.0) or R5 (5.0.0). Used for validation and for converting between JSON and XML. Profile packages must be for the same version.", PropertyEditorType.OPTION, FhirVersion.values()));
+        p.put("resourceTypes", new DataTypePropertyDescriptor(getResourceTypes(), "Resource Types", "The resource types this connector accepts, separated by commas, for example Patient, Observation, Bundle. A message of another type, or a Bundle with an entry of another type, is invalid: Invalid Messages decides whether it is rejected or accepted. A Bundle needs the types of its entries in the list too. Names are case-sensitive. Leave empty to accept every type. This is a check on the input; it does not make the validator use less memory.", PropertyEditorType.STRING));
         p.put("transformerFormat", new DataTypePropertyDescriptor(getTransformerFormat(), "Transformer Format", "XML: the transformer works on FHIR XML with E4X (msg.name.family.@value). JSON: msg is a JavaScript object of the FHIR JSON (msg.name[0].family), and the outbound message is made from it. With JSON, decimals lose trailing zeros (1.50 becomes 1.5), as in any JavaScript. On outbound properties it sets the format of the outbound template (tmp).", PropertyEditorType.OPTION, TransformerFormat.values()));
         p.put("stripNamespaces", new DataTypePropertyDescriptor(isStripNamespaces(), "Strip Namespaces", "If checked, the FHIR namespace (http://hl7.org/fhir) is removed from the XML the transformer works on, so you can write msg.name.family.@value instead of using namespaces. It is put back when the message leaves the transformer. The XHTML namespace of narratives (text.div) is kept.", PropertyEditorType.BOOLEAN));
         p.put("outputFormat", new DataTypePropertyDescriptor(getOutputFormat(), "Output Format", "The format of the outbound message (the encoded data): FHIR JSON or FHIR XML. Messages come in as either; the transformer always works on FHIR XML. After a transformer the FHIR engine writes the message in the element order of the specification.", PropertyEditorType.OPTION, OutputFormat.values()));
@@ -94,6 +96,9 @@ public class FhirSerializationProperties extends SerializationProperties {
         }
         if (properties.get("fhirVersion") != null) {
             fhirVersion = toEnum(FhirVersion.class, properties.get("fhirVersion"));
+        }
+        if (properties.get("resourceTypes") != null) {
+            resourceTypes = properties.get("resourceTypes").toString();
         }
         if (properties.get("transformerFormat") != null) {
             transformerFormat = toEnum(TransformerFormat.class, properties.get("transformerFormat"));
@@ -170,6 +175,14 @@ public class FhirSerializationProperties extends SerializationProperties {
 
     public void setFhirVersion(FhirVersion fhirVersion) {
         this.fhirVersion = fhirVersion;
+    }
+
+    public String getResourceTypes() {
+        return resourceTypes == null ? "" : resourceTypes;
+    }
+
+    public void setResourceTypes(String resourceTypes) {
+        this.resourceTypes = resourceTypes;
     }
 
     public TransformerFormat getTransformerFormat() {
@@ -305,6 +318,7 @@ public class FhirSerializationProperties extends SerializationProperties {
     public Map<String, Object> getPurgedProperties() {
         Map<String, Object> purged = new HashMap<>();
         purged.put("fhirVersion", getFhirVersion());
+        purged.put("resourceTypeCount", FhirResourceTypes.parse(getResourceTypes()).size());
         purged.put("transformerFormat", getTransformerFormat());
         purged.put("stripNamespaces", isStripNamespaces());
         purged.put("outputFormat", getOutputFormat());

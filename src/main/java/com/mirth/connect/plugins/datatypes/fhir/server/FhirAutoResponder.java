@@ -50,7 +50,7 @@ public class FhirAutoResponder implements AutoResponder {
     @Override
     public Response getResponse(Status status, String message, ConnectorMessage connectorMessage) throws Exception {
         Map<String, Object> connectorMap = connectorMessage.getConnectorMap();
-        if (properties.isValidateInbound() && !connectorMap.containsKey(FhirSerializer.VALID_VARIABLE)) {
+        if (serializer.checksInbound() && !connectorMap.containsKey(FhirSerializer.VALID_VARIABLE)) {
             // "Before processing": the message has not been through the data type yet.
             serializer.populateMetaData(message, connectorMap);
         }
