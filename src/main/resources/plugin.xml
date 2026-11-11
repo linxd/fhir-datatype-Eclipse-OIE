@@ -1,7 +1,7 @@
 <pluginMetaData path="datatype-fhir">
 	<name>FHIR Data Type</name>
 	<author>X Connections</author>
-	<pluginVersion>1.5.1</pluginVersion>
+	<pluginVersion>1.5.2</pluginVersion>
 	<mirthVersion>4.6.0,4.7.0</mirthVersion>
 	<url>https://x-connections.info</url>
 	<description>This plugin provides the HL7 FHIR data type: FHIR JSON and XML in, FHIR XML in the transformer, FHIR JSON or XML out, with validation against the FHIR specification and your own profiles (HAPI FHIR).</description>
