@@ -43,6 +43,9 @@ public final class FhirEngineLoader {
         if (engine == null && error == null) {
             try {
                 engine = load();
+                // Started here, so idle validators are released whoever built them (a FHIR channel,
+                // FhirTools in a script, or another plugin using the engine).
+                FhirValidatorUsage.startPeriodicRelease(engine);
             } catch (Throwable t) {
                 error = t.getClass().getSimpleName() + (t.getMessage() != null ? ": " + t.getMessage() : "");
             }

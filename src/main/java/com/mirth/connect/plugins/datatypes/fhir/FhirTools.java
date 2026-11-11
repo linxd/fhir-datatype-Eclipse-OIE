@@ -59,9 +59,7 @@ public final class FhirTools {
             source = FhirXml.addNamespace(source);
         }
         FhirEngine engine = FhirEngineLoader.engine();
-        FhirValidation validation = new FhirValidation(engine.validate(source, properties.engineOptions()), FailOn.Errors);
-        FhirValidatorUsage.startPeriodicRelease(engine);
-        return validation;
+        return new FhirValidation(engine.validate(source, properties.engineOptions()), FailOn.Errors);
     }
 
     /** FHIR R4 XML (with or without the FHIR namespace, e.g. msg.toString()) to FHIR JSON. */
