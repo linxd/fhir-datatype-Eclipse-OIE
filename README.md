@@ -126,7 +126,7 @@ A FHIR client expects an `OperationOutcome` back, and HTTP `400` when it sent so
 | Filtered | "The message was filtered and not processed further." | 200 |
 | Any other error (e.g. in a transformer) | the error, with code `exception` | 500 |
 
-The HTTP status and content type are put in the channel map. Use them in the **HTTP Listener** settings:
+The HTTP status and content type are put in the channel map and the source map (so they also show in the message's source map). Use them in the **HTTP Listener** settings:
 
 | HTTP Listener setting | Value |
 | --- | --- |

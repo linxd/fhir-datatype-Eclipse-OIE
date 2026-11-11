@@ -253,6 +253,10 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.2.5</version>
+        <configuration>
+          <!-- As OIE starts the server (conf/default_modules.vmoptions); FhirAutoResponder needs it. -->
+          <argLine>--add-opens=java.base/java.util=ALL-UNNAMED</argLine>
+        </configuration>
       </plugin>
 
       <!-- The engine wants three jars: shared (serializer + properties), server and client. The FHIR engine jar goes to lib/. -->
