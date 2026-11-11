@@ -110,7 +110,10 @@ echo "Extension loaded"
 # ------------------------------------------------------------------ channel
 
 o="$(native "${oie}")"
-cp="${o}/server-lib/*${sep}${o}/server-lib/donkey/*${sep}${o}/server-lib/commons/*${sep}${o}/server-lib/log4j/*${sep}${o}/extensions/http/*${sep}${o}/extensions/vm/*${sep}${o}/extensions/datatype-fhir/datatype-fhir-shared.jar"
+# The engine jars first: they contain their own public copies of Rhino classes such as NativeDate,
+# which must win over server-lib/rhino-*.jar. A wildcard lists jars in directory order, which
+# differs between Windows and Linux.
+cp="${o}/server-lib/mirth-client-core.jar${sep}${o}/server-lib/mirth-server.jar${sep}${o}/server-lib/*${sep}${o}/server-lib/donkey/*${sep}${o}/server-lib/commons/*${sep}${o}/server-lib/log4j/*${sep}${o}/extensions/http/*${sep}${o}/extensions/vm/*${sep}${o}/extensions/datatype-fhir/datatype-fhir-shared.jar"
 "${java}" -cp "${cp}" "$(native "${repo}/.github/smoke/SmokeChannel.java")" "${version}" "${listener_port}" "$(native "${work}/channel.xml")" > "${work}/generator.out" 2>&1 \
   || { cat "${work}/generator.out" >&2; fail "could not generate the channel"; }
 
