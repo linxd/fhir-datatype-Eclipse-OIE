@@ -11,7 +11,7 @@
 # Rejected messages get HTTP 500, not the documented 400: the ${fhirHttpStatus} and
 # ${fhirContentType} that FhirAutoResponder puts in the channel map do not reach the HTTP
 # Listener (it reads the processed message, the auto responder gets an earlier copy of the source
-# message). Change REJECTED_STATUS and check the Content-Type when that is fixed.
+# message), issue #33. Change REJECTED_STATUS and check the Content-Type when that is fixed.
 #
 # This covers what the unit tests cannot: the engine loads the extension (exact mirthVersion),
 # HAPI runs in the plugin's isolated lib/ class loader, and the heap is enough.
@@ -154,7 +154,7 @@ cat > "${work}/observation.json" <<'JSON'
 {"resourceType":"Observation","status":"final","code":{"coding":[{"system":"http://loinc.org","code":"8867-4"}]}}
 JSON
 
-REJECTED_STATUS=500
+REJECTED_STATUS=500 # should be 400: issue #33
 post patient-json application/fhir+json "${repo}/examples/patient.json" 200 '"resourceType":"OperationOutcome"'
 post patient-xml application/fhir+xml "${work}/patient.xml" 200 '<OperationOutcome'
 post invalid-patient application/fhir+json "${repo}/examples/patient-invalid.json" "${REJECTED_STATUS}" 'shoeSize'

@@ -340,7 +340,7 @@ SMOKE_HTTP_PORT=18080 SMOKE_HTTPS_PORT=18443 SMOKE_LISTENER_PORT=18090 \
 
 It downloads the engine (about 240 MB, kept in `~/.cache/oie` or `OIE_DOWNLOADS`), unpacks it in a temporary folder (`SMOKE_DIR`) and stops it afterwards. It never touches an installed engine.
 
-**Known:** rejected messages get HTTP 500 instead of 400. The `fhirHttpStatus` and `fhirContentType` that `FhirAutoResponder` puts in the channel map do not reach the HTTP Listener, which reads the processed message while the auto responder gets an earlier copy of the source message. The smoke test checks the current behaviour (`REJECTED_STATUS`); change it when that is fixed.
+**Known ([#33](https://github.com/matthydehoog/fhir-datatype-Eclipse-OIE/issues/33)):** rejected messages get HTTP 500 instead of 400. The `fhirHttpStatus` and `fhirContentType` that `FhirAutoResponder` puts in the channel map do not reach the HTTP Listener, which reads the processed message while the auto responder gets an earlier copy of the source message. The smoke test checks the current behaviour (`REJECTED_STATUS`); change it when that is fixed.
 
 **Dependabot** (`.github/dependabot.yml`) opens weekly pull requests for Maven dependencies and monthly ones for the GitHub Actions. HAPI FHIR and `org.hl7.fhir.core` come as one group; follow *Updating HAPI FHIR* under [Dependencies](#dependencies) before merging. The engine jars and the libraries the engine already ships (Log4j, commons-lang3, Rhino, XStream) are ignored: they must match the engine, not the newest version.
 
