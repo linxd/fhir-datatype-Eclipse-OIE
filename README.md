@@ -1,5 +1,7 @@
 # FHIR Data Type for Open Integration Engine
 
+[![Build](https://github.com/matthydehoog/fhir-datatype-Eclipse-OIE/actions/workflows/build.yml/badge.svg)](https://github.com/matthydehoog/fhir-datatype-Eclipse-OIE/actions/workflows/build.yml)
+
 An HL7 FHIR data type for [Eclipse Open Integration Engine](https://github.com/OpenIntegrationEngine) (OIE, a fork of Mirth Connect):
 
 - **FHIR JSON and FHIR XML in**: the format is detected per message.
@@ -230,7 +232,7 @@ Keep the data type up to date: a new HAPI FHIR version is included in a new rele
 
 ## Building
 
-JDK 17 and Maven. The engine jars (`com.mirth.connect:*:4.6.0`) must be in the local Maven repository.
+JDK 17 and Maven. The engine jars (`com.mirth.connect:*:4.6.0`) must be in the local Maven repository: `bash .github/scripts/install-oie-jars.sh 4.6.0` puts them there. Every push and pull request is built and tested on GitHub against OIE 4.6.0 and 4.7.0, including a smoke test in a running engine.
 
 ```bash
 mvn package
