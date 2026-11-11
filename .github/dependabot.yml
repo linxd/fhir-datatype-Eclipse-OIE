@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # HAPI FHIR and the HL7 core it uses are updated together. Before merging: compare the file
+      # lists in LazySpecificationSupport with the new HAPI (docs/development.md, "Updating HAPI
+      # FHIR"), check the README's security section, and test the zip in OIE (the smoke test
+      # covers the basics).
+      hapi-fhir:
+        patterns:
+          - "ca.uhn.hapi.fhir:*"
+          - "org.hl7.fhir.core:*"
+    ignore:
+      # The engine jars come from the engine release (see .github/scripts/install-oie-jars.sh),
+      # and the libraries it already ships must match its versions, not the newest ones.
+      - dependency-name: "com.mirth.connect:*"
+      - dependency-name: "org.apache.logging.log4j:*"
+      - dependency-name: "org.apache.commons:commons-lang3"
+      - dependency-name: "org.mozilla:rhino"
+      - dependency-name: "com.thoughtworks.xstream:xstream"
+      - dependency-name: "xpp3:xpp3"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

@@ -35,7 +35,7 @@ This guide is for people who build, change or release the FHIR Data Type. For us
 | `docs/` | This guide and the code template reference. |
 | `assembly.xml` | How the extension zip is laid out. |
 | `oie.json` | The manifest for the OIE Community Store catalog. |
-| `.github/` | Workflows for the catalog pull request and the Jira issue sync. |
+| `.github/` | Workflows: build, test and smoke test on every push (`build.yml`), the catalog pull request and the Jira issue sync; their scripts in `.github/scripts/`, the smoke test channel in `.github/smoke/`, and Dependabot (`dependabot.yml`). |
 
 `...` is `com/mirth/connect/plugins/datatypes`. The package name follows the engine's own data types, so the plugin looks like a built-in one.
 
@@ -45,7 +45,7 @@ This guide is for people who build, change or release the FHIR Data Type. For us
 
 - **JDK 17.** The plugin jars target Java 11, the engine jar Java 17 (see [Two Java levels](#two-java-levels)); one JDK 17 builds both.
 - **Maven 3.8** or later.
-- **The OIE 4.6.0 engine jars** in your local Maven repository. They are not published to Maven Central, so install them once from an OIE 4.6.0 installation:
+- **The OIE 4.6.0 engine jars** in your local Maven repository. They are not published to Maven Central. `bash .github/scripts/install-oie-jars.sh 4.6.0` downloads the engine release from GitHub, checks its SHA-256 and installs them (CI does the same); or install them once from an OIE 4.6.0 installation:
 
 | Maven artifact (`com.mirth.connect`, version `4.6.0`) | File in the OIE installation |
 | --- | --- |
@@ -320,6 +320,32 @@ There are 97 tests (JUnit 4). They run without OIE: the engine jars are on the t
 
 Run tests from the repository root: some read files from `examples/`.
 
+### On GitHub (CI)
+
+`.github/workflows/build.yml` runs on every push to `main`, every pull request and every version tag:
+
+| Job | What it does |
+| --- | --- |
+| Build | `mvn package` against the engine jars of every OIE version in `<mirthVersion>`: 4.6.0 on Java 17 (this build's zip is kept as the artifact `datatype-fhir`), 4.7.0 on Java 17 and 21. The jars come from the engine's GitHub release (`install-oie-jars.sh`, checked against its `sha256sums`) and are cached. The 4.6.0 job also runs `check-versions.sh`: the four version numbers must agree, and match the tag on a tag build. |
+| Smoke test | Installs the artifact zip in a real engine, 4.6.0 on Java 17 and 4.7.0 on Java 21, with 1 GB of heap (`smoke-test.sh`). It checks that the engine loads the extension, deploys the channel of `.github/smoke/SmokeChannel.java` (HTTP Listener, *Resource Types* `Patient`, auto-generated responses, XML out) and posts a valid JSON and XML Patient, an invalid Patient and an Observation. On failure the server log, the responses and the channel are kept as an artifact. |
+| Release | Only on a `v*` tag; see [Releasing](#releasing). |
+
+The smoke test also runs locally, with Git Bash on Windows too; use other ports if an engine is already running:
+
+```bash
+mvn package
+SMOKE_HTTP_PORT=18080 SMOKE_HTTPS_PORT=18443 SMOKE_LISTENER_PORT=18090 \
+  bash .github/scripts/smoke-test.sh 4.7.0 target/datatype-fhir-<version>.zip
+```
+
+It downloads the engine (about 240 MB, kept in `~/.cache/oie` or `OIE_DOWNLOADS`), unpacks it in a temporary folder (`SMOKE_DIR`) and stops it afterwards. It never touches an installed engine.
+
+**Known ([#33](https://github.com/matthydehoog/fhir-datatype-Eclipse-OIE/issues/33)):** rejected messages get HTTP 500 instead of 400. The `fhirHttpStatus` and `fhirContentType` that `FhirAutoResponder` puts in the channel map do not reach the HTTP Listener, which reads the processed message while the auto responder gets an earlier copy of the source message. The smoke test checks the current behaviour (`REJECTED_STATUS`); change it when that is fixed.
+
+**Dependabot** (`.github/dependabot.yml`) opens weekly pull requests for Maven dependencies and monthly ones for the GitHub Actions. HAPI FHIR and `org.hl7.fhir.core` come as one group; follow *Updating HAPI FHIR* under [Dependencies](#dependencies) before merging. The engine jars and the libraries the engine already ships (Log4j, commons-lang3, Rhino, XStream) are ignored: they must match the engine, not the newest version.
+
+**A new OIE version:** add it to `<mirthVersion>` (see [Releasing](#releasing)) and to both matrices in `build.yml`.
+
 ## Trying it in OIE
 
 1. `mvn clean package`.
@@ -356,9 +382,15 @@ Keep the pure-Java paths (`FhirXml`, `FhirJson`) faithful: they must not reorder
    - `oie.json` (`"version"`)
    - `webadmin/plugin.json` (`"version"`)
 3. **Engine versions.** `<mirthVersion>` in `plugin.xml` lists every OIE version the extension may load on, comma-separated (now `4.6.0,4.7.0`). OIE only loads an extension whose list contains its **exact** version, so a new OIE release needs a new plugin release. `minEngineVersion` in `oie.json` is the lowest supported version for the catalog.
-4. **Build and test.** `mvn clean package`, then test the zip in OIE.
+4. **Build and test.** The pull request's checks must be green (build and smoke test on every OIE version). Test what the smoke test does not cover in OIE: the zip is the `datatype-fhir` artifact of the pull request's build, or `mvn clean package`.
 5. **Merge** the pull request.
-6. **Release.** Create the release on GitHub with the zip and its SHA-256 in the notes:
+6. **Release.** Either push a tag, and CI builds, smoke-tests and creates the release with the zip and a `.sha256` file and generated notes (edit the notes afterwards):
+
+   ```bash
+   git tag v1.6.1 origin/main && git push origin v1.6.1
+   ```
+
+   Or create the release by hand with the zip you tested and its SHA-256 in the notes. CI then builds the tag too, but `release.sh` leaves a release that already has the zip alone, because a new build is a different file with another checksum:
 
    ```bash
    sha256sum target/datatype-fhir-1.4.2.zip
@@ -367,7 +399,7 @@ Keep the pure-Java paths (`FhirXml`, `FhirJson`) faithful: they must not reorder
    ```
 
    Release notes describe what changed for the user, how to upgrade (replace the extension, restart; channel settings are kept), and the SHA-256.
-7. **Catalog.** Publishing the release triggers `catalog-pr.yml`, which files a pull request to the [OIE Community Store catalog](https://github.com/gibson9583/oie-community-catalog) from the fork `<owner>/oie-community-catalog`, using `oie.json` at the tag. It needs the repository secret `CATALOG_TOKEN` (a classic PAT with `public_repo`); without it the job is skipped. Close earlier catalog pull requests of this plugin that are still open.
+7. **Catalog.** Publishing the release triggers `catalog-pr.yml` (a release created by CI calls it from `build.yml`, because a release made with `GITHUB_TOKEN` fires no event), which files a pull request to the [OIE Community Store catalog](https://github.com/gibson9583/oie-community-catalog) from the fork `<owner>/oie-community-catalog`, using `oie.json` at the tag. It needs the repository secret `CATALOG_TOKEN` (a classic PAT with `public_repo`); without it the job is skipped. Close earlier catalog pull requests of this plugin that are still open.
 8. **Issues.** New GitHub issues get a Jira issue through `jira-issue.yml` (variables `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_PROJECT_KEY`, secret `JIRA_API_TOKEN`). Closing the GitHub issue does not close the Jira issue: set it to *Done* yourself.
 9. **Documentation.** Update the README, `docs/`, and the [online course](https://eclipse-oie.moodiy.cloud/course/view.php?id=9) when behaviour changes.
 
