@@ -42,7 +42,7 @@ public final class FhirValidatorUsage {
         return inUse.get();
     }
 
-    /** Starts the periodic check, once the engine validates. */
+    /** Starts the periodic check; FhirEngineLoader calls it once, when the engine is loaded. */
     static synchronized void startPeriodicRelease(FhirEngine engine) {
         if (timer != null) {
             return;
