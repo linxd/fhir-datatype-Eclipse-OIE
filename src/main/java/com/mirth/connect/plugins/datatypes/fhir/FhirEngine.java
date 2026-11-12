@@ -51,6 +51,15 @@ public interface FhirEngine {
     /** FHIR XML (with namespace) written again in the order of the specification. Fails on elements that are not in the specification. */
     String reorderXml(String xml, String fhirVersion, boolean pretty) throws Exception;
 
+    /** FHIR JSON written again in the order of the specification. Fails on properties that are not in the specification. */
+    String reorderJson(String json, String fhirVersion, boolean pretty) throws Exception;
+
     /** Builds the validator for these options ahead of the first message; loading the specification takes a few seconds. */
     void warmUp(Map<String, String> options);
+
+    /**
+     * Drops the validators whose options are not in {@code inUse} and that were not used for
+     * {@code idleMillis}, and the specification of a FHIR version once no validator needs it.
+     */
+    void retainValidators(List<Map<String, String>> inUse, long idleMillis);
 }

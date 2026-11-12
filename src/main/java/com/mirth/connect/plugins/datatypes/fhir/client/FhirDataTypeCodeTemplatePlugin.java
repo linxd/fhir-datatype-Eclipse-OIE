@@ -70,14 +70,14 @@ public class FhirDataTypeCodeTemplatePlugin extends DataTypeCodeTemplatePlugin {
                 + "if (!result.isValid()) {\n"
                 + "    logger.warn('Invalid FHIR resource:\\n' + result.summary());\n"
                 + "}",
-                "Validates a FHIR resource (JSON, or XML with or without the FHIR namespace) against the FHIR R4 specification and its meta.profile. isValid() is false on errors; summary() gives one line per error and warning."));
+                "Validates a FHIR resource (JSON, or XML with or without the FHIR namespace) against the FHIR R4 specification and its meta.profile. isValid() is false on errors; summary() gives one line per error and warning. For R4B or R5, pass the version as fourth argument: FhirTools.validate(resource, '', '', 'R5')."));
         templates.add(code("Validate FHIR resource against a profile", everywhere,
                 FHIR_TOOLS
                 + "var result = FhirTools.validate(msg.toString(), 'http://example.org/fhir/StructureDefinition/my-patient', 'C:/fhir/packages');\n"
                 + "if (!result.isValid()) {\n"
                 + "    logger.warn('Resource does not conform to the profile:\\n' + result.summary());\n"
                 + "}",
-                "Validates a FHIR resource against a required profile (canonical URL). The third argument lists files and folders with your own profiles and NPM packages, separated by ';' (empty for none)."));
+                "Validates a FHIR resource against a required profile (canonical URL). The third argument lists files and folders with your own profiles and NPM packages, separated by ';' (empty for none). An optional fourth argument sets the FHIR version: R4 (default), R4B or R5; the packages must be for that version."));
         templates.add(code("Read FHIR validation issues", everywhere,
                 FHIR_TOOLS
                 + "var result = FhirTools.validate(msg.toString());\n"
@@ -89,10 +89,10 @@ public class FhirDataTypeCodeTemplatePlugin extends DataTypeCodeTemplatePlugin {
                 "Walks through the errors and warnings of a validation. Each issue has severity, location, line, column, message and messageId. getIssues() also includes information messages."));
         templates.add(code("Convert FHIR XML to JSON", everywhere,
                 FHIR_TOOLS + "var json = FhirTools.toJson(msg.toString());",
-                "Converts FHIR XML, with or without the FHIR namespace (e.g. the transformer's msg), to FHIR JSON."));
+                "Converts FHIR XML, with or without the FHIR namespace (e.g. the transformer's msg), to FHIR JSON. Uses R4; for R4B or R5 pass the version: FhirTools.toJson(xml, 'R5')."));
         templates.add(code("Convert FHIR JSON to XML", everywhere,
                 FHIR_TOOLS + "var xml = FhirTools.toXml(json);",
-                "Converts FHIR JSON to FHIR XML with the FHIR namespace. Use new XML(...) on the result to work on it with E4X."));
+                "Converts FHIR JSON to FHIR XML with the FHIR namespace. Use new XML(...) on the result to work on it with E4X. Uses R4; for R4B or R5 pass the version: FhirTools.toXml(json, 'R5')."));
 
         // Validation results of the inbound data type
         templates.add(code("Is the FHIR message valid", connector, "$('fhirValid')",

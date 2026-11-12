@@ -7,7 +7,9 @@
 package com.mirth.connect.plugins.datatypes.fhir;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -38,12 +40,16 @@ public class FhirSerializer implements IMessageSerializer {
     /** The issues as a FHIR OperationOutcome resource (JSON), ready to return to the sender. */
     public static final String OPERATION_OUTCOME_VARIABLE = "fhirOperationOutcome";
 
+    static final String TRANSFORMER_OUTPUT_INVALID = "The transformer output is not valid FHIR";
+
     private static final Logger logger = LogManager.getLogger(FhirSerializer.class);
 
     /** The last message validated on this thread, so each message is validated once. */
     private static final ThreadLocal<Object[]> LAST_VALIDATION = new ThreadLocal<>();
 
     private final FhirSerializationProperties properties;
+    /** The Resource Types property; empty accepts every type. */
+    private final Set<String> resourceTypes;
 
     public FhirSerializer(SerializerProperties serializerProperties) {
         FhirSerializationProperties p = null;
@@ -51,6 +57,7 @@ public class FhirSerializer implements IMessageSerializer {
             p = (FhirSerializationProperties) serializerProperties.getSerializationProperties();
         }
         properties = p != null ? p : new FhirSerializationProperties();
+        resourceTypes = FhirResourceTypes.parse(properties.getResourceTypes());
         if ((properties.isValidateInbound() || properties.isValidateOutbound()) && FhirEngineLoader.isServer()) {
             warmUp();
         }
@@ -60,7 +67,7 @@ public class FhirSerializer implements IMessageSerializer {
 
     @Override
     public boolean isSerializationRequired(boolean toXml) {
-        return toXml ? properties.isValidateInbound() : properties.isValidateOutbound();
+        return toXml ? checksInbound() : properties.isValidateOutbound();
     }
 
     @Override
@@ -70,7 +77,7 @@ public class FhirSerializer implements IMessageSerializer {
             map.put(DefaultMetaData.TYPE_VARIABLE_MAPPING, type);
         }
         map.put(DefaultMetaData.VERSION_VARIABLE_MAPPING, properties.getFhirVersion().name());
-        if (!properties.isValidateInbound()) {
+        if (!checksInbound()) {
             return;
         }
         try {
@@ -120,6 +127,11 @@ public class FhirSerializer implements IMessageSerializer {
     @Override
     public String fromXML(String source) throws MessageSerializerException {
         refuseDoctype(source);
+        if (FhirXml.detect(source) == FhirXml.Format.JSON) {
+            // Transformer Format JSON: the engine asks the outbound data type for XML all the same, because
+            // it takes the outbound serialization type from deserialization properties, which FHIR has not.
+            return fromJSON(source);
+        }
         return encode(FhirXml.addNamespace(source.trim()), true);
     }
 
@@ -148,13 +160,17 @@ public class FhirSerializer implements IMessageSerializer {
             } else if (in == FhirXml.Format.XML && fromTransformer && FhirEngineLoader.isServer()) {
                 // The transformer may have added elements anywhere; FHIR XML needs the order of the specification.
                 output = engine("write FHIR XML").reorderXml(message, version, properties.isPrettyPrint());
+            } else if (in == FhirXml.Format.JSON && fromTransformer && FhirEngineLoader.isServer()) {
+                // JSON.stringify: one line, and a misspelled element would otherwise go out unnoticed.
+                output = engine("write FHIR JSON").reorderJson(message, version, properties.isPrettyPrint());
             } else {
                 output = message;
             }
         } catch (MessageSerializerException e) {
             throw e;
         } catch (Exception e) {
-            throw error("Error converting FHIR to " + properties.getOutputFormat(), e);
+            // After a transformer the cause is nearly always the script, for example a misspelled element.
+            throw error(fromTransformer ? TRANSFORMER_OUTPUT_INVALID : "Error converting FHIR to " + properties.getOutputFormat(), e);
         }
         return output;
     }
@@ -170,7 +186,7 @@ public class FhirSerializer implements IMessageSerializer {
     }
 
     private void checkInbound(String message) throws MessageSerializerException {
-        if (!properties.isValidateInbound()) {
+        if (!checksInbound()) {
             return;
         }
         FhirValidation validation;
@@ -189,9 +205,30 @@ public class FhirSerializer implements IMessageSerializer {
         if (last != null && last[0] == properties && message.equals(last[1])) {
             return (FhirValidation) last[2];
         }
-        FhirValidation validation = validate(message);
+        FhirValidation validation = refusedResourceTypes(message);
+        if (validation == null && properties.isValidateInbound()) {
+            validation = validate(message);
+        }
         LAST_VALIDATION.set(new Object[] { properties, message, validation });
         return validation;
+    }
+
+    /** Whether inbound messages are checked: by validation, or against a Resource Types list. */
+    public boolean checksInbound() {
+        return properties.isValidateInbound() || !resourceTypes.isEmpty();
+    }
+
+    /**
+     * An invalid outcome when the message (or a Bundle entry) has a type that is not in Resource
+     * Types, otherwise null. It is not validated further then: the connector does not process that
+     * type. Like validation, only on the server, so the Administrator accepts any template.
+     */
+    private FhirValidation refusedResourceTypes(String message) {
+        if (resourceTypes.isEmpty() || !FhirEngineLoader.isServer()) {
+            return null;
+        }
+        List<Map<String, String>> issues = FhirResourceTypes.check(message, resourceTypes);
+        return issues.isEmpty() ? null : new FhirValidation(issues, properties.getFailOn());
     }
 
     /** Null in the Administrator, where the engine is not available (and not needed). */
@@ -201,7 +238,8 @@ public class FhirSerializer implements IMessageSerializer {
         }
         try {
             FhirXml.detect(message);
-            return new FhirValidation(engine("validate FHIR").validate(message, properties.engineOptions()), properties.getFailOn());
+            FhirEngine engine = engine("validate FHIR");
+            return new FhirValidation(engine.validate(message, properties.engineOptions()), properties.getFailOn());
         } catch (MessageSerializerException e) {
             throw e;
         } catch (Exception e) {
@@ -240,12 +278,27 @@ public class FhirSerializer implements IMessageSerializer {
     }
 
     @Override
-    public String toJSON(String message) throws MessageSerializerException {
-        return null;
+    public String toJSON(String source) throws MessageSerializerException {
+        refuseDoctype(source);
+        checkInbound(source);
+        try {
+            if (FhirXml.detect(source) == FhirXml.Format.JSON) {
+                return source; // as it came in, like the XML path
+            }
+            if (!FhirEngineLoader.isServer()) {
+                // Only the FHIR engine knows which elements are lists; it is not available in the Administrator.
+                throw new IllegalArgumentException("With Transformer Format JSON, use a FHIR JSON message as template.");
+            }
+            return engine("convert FHIR XML to JSON").toJson(FhirXml.addNamespace(source.trim()), properties.getFhirVersion().name(), false);
+        } catch (MessageSerializerException e) {
+            throw e;
+        } catch (Exception e) {
+            throw error("Error converting FHIR to JSON", e);
+        }
     }
 
     @Override
-    public String fromJSON(String message) throws MessageSerializerException {
-        return null;
+    public String fromJSON(String source) throws MessageSerializerException {
+        return encode(source.trim(), true);
     }
 }

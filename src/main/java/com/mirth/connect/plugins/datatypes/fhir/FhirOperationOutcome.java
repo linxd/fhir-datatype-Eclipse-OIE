@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Builds FHIR R4 OperationOutcome resources as JSON, without HAPI, so they can be created
+ * Builds FHIR OperationOutcome resources as JSON (the same structure in R4, R4B and R5), without HAPI, so they can be created
  * anywhere (and turned into XML with {@link FhirXml#jsonToXml}). Issue elements are written in
  * the order of the specification, so the XML form is valid as well.
  */

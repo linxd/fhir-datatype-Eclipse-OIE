@@ -8,7 +8,7 @@ const opt = (key, label, values, def, hint) => ({ key, label, type: "select", op
 const code = (key, label, def, hint) => ({ key, label, type: "code", default: def, hint });
 
 const BATCH_SCRIPT_HINT =
-  "用于拆分批处理并返回下一条报文的 JavaScript 脚本。可访问 'reader'（一个 Java BufferedReader）；返回 null 或空值表示输入结束。仅在连接器启用"处理批处理"时使用。";
+  "用于拆分批处理并返回下一条报文的 JavaScript 脚本。可访问 'reader'（一个 Java BufferedReader）；返回 null 或空值表示输入结束。仅在连接器启用“处理批处理”时使用。";
 
 const DEF = {
   name: "FHIR",
@@ -21,7 +21,9 @@ const DEF = {
       label: "序列化",
       class: `${PKG}.FhirSerializationProperties`,
       fields: [
-        opt("fhirVersion", "FHIR 版本", ["R4"], "R4", "报文的 FHIR 版本。用于验证以及 JSON 和 XML 之间的转换。"),
+        opt("fhirVersion", "FHIR 版本", ["R4", "R4B", "R5"], "R4", "报文的 FHIR 版本：R4（4.0.1）、R4B（4.3.0）或 R5（5.0.0）。用于验证以及 JSON 和 XML 之间的转换。Profile 包必须为相同版本。"),
+        text("resourceTypes", "资源类型", "", "此连接器接受的资源类型，用逗号分隔，例如 Patient、Observation、Bundle。其他类型的报文，或包含其他类型条目的 Bundle，将被判定为无效：由“无效报文处理”决定拒绝还是接受。名称区分大小写。留空则接受所有类型。这不会减少验证器的内存占用。"),
+        opt("transformerFormat", "转换器格式", ["XML", "JSON"], "XML", "XML：转换器使用 E4X 处理 FHIR XML（msg.name.family.@value）。JSON：msg 是 FHIR JSON 的 JavaScript 对象（msg.name[0].family），出站报文由它生成。使用 JSON 时，小数会丢失末尾的零（1.50 变为 1.5）。在出站属性中，它设置出站模板（tmp）的格式。"),
         bool("stripNamespaces", "去除命名空间", true, "如果勾选，FHIR 命名空间（http://hl7.org/fhir）将从转换器处理的 XML 中移除，使您可以编写 msg.name.family.@value。报文离开转换器时命名空间会被还原。叙事文本（text.div）的 XHTML 命名空间会被保留。"),
         opt("outputFormat", "输出格式", ["JSON", "XML"], "JSON", "出站报文的格式（编码数据）：FHIR JSON 或 FHIR XML。入站报文可以是任意格式；转换器始终使用 FHIR XML。经过转换器后，FHIR 引擎按规范的元素顺序写入报文。"),
         bool("prettyPrint", "格式化输出", true, "如果勾选，FHIR 引擎生成的出站 JSON 和 XML 将被缩进格式化。"),
@@ -50,7 +52,7 @@ const DEF = {
             { value: "JavaScript", label: "JavaScript" }
           ],
           default: "Bundle_Entry",
-          hint: "Bundle 条目：每个 Bundle.entry.resource 成为独立报文，保留原始格式（JSON 或 XML）。源映射中将包含 fhirBundleType、fhirBundleId、fhirEntryIndex（第一个条目为 0）、fhirEntryCount、fhirEntryFullUrl、fhirEntryRequestMethod 和 fhirEntryRequestUrl。没有 resource 的条目将被跳过；非 Bundle 报文保持为一条报文。仅在连接器启用"处理批处理"时使用。"
+          hint: "Bundle 条目：每个 Bundle.entry.resource 成为独立报文，保留原始格式（JSON 或 XML）。源映射中将包含 fhirBundleType、fhirBundleId、fhirEntryIndex（第一个条目为 0）、fhirEntryCount、fhirEntryFullUrl、fhirEntryRequestMethod 和 fhirEntryRequestUrl。没有 resource 的条目将被跳过；非 Bundle 报文保持为一条报文。仅在连接器启用“处理批处理”时使用。"
         },
         code("batchScript", "JavaScript", null, BATCH_SCRIPT_HINT)
       ]

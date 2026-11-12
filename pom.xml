@@ -6,7 +6,7 @@
 
   <groupId>com.matthy.oie</groupId>
   <artifactId>datatype-fhir</artifactId>
-  <version>1.4.2</version>
+  <version>1.6.1</version>
   <packaging>jar</packaging>
 
   <name>OIE FHIR Data Type</name>
@@ -50,7 +50,7 @@
       <artifactId>hapi-fhir-validation</artifactId>
       <version>${hapi.version}</version>
       <!--
-        Not needed to validate R4, and about 70 MB: other FHIR versions, diagram rendering, git,
+        Not needed to validate R4, R4B or R5: DSTU2 versions, diagram rendering, git,
         a converter cache in SQLite, XSLT (Saxon), Thymeleaf's expression language (OGNL), XML
         signatures, Markdown rendering and an HTTP client. Put one back if a validation path turns out
         to need it.
@@ -60,7 +60,6 @@
       <exclusions>
         <exclusion><groupId>ca.uhn.hapi.fhir</groupId><artifactId>org.hl7.fhir.dstu2</artifactId></exclusion>
         <exclusion><groupId>ca.uhn.hapi.fhir</groupId><artifactId>org.hl7.fhir.dstu2016may</artifactId></exclusion>
-        <exclusion><groupId>ca.uhn.hapi.fhir</groupId><artifactId>org.hl7.fhir.r4b</artifactId></exclusion>
         <exclusion><groupId>net.sourceforge.plantuml</groupId><artifactId>plantuml-mit</artifactId></exclusion>
         <exclusion><groupId>org.eclipse.jgit</groupId><artifactId>org.eclipse.jgit</artifactId></exclusion>
         <exclusion><groupId>org.xerial</groupId><artifactId>sqlite-jdbc</artifactId></exclusion>
@@ -77,9 +76,39 @@
       <artifactId>hapi-fhir-client</artifactId>
       <version>${hapi.version}</version>
     </dependency>
+    <!-- One structures and one validation-resources library per FHIR Version (FhirSerializationProperties.FhirVersion). -->
     <dependency>
       <groupId>ca.uhn.hapi.fhir</groupId>
       <artifactId>hapi-fhir-validation-resources-r4</artifactId>
+      <version>${hapi.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>ca.uhn.hapi.fhir</groupId>
+      <artifactId>hapi-fhir-structures-r4b</artifactId>
+      <version>${hapi.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>ca.uhn.hapi.fhir</groupId>
+      <artifactId>hapi-fhir-validation-resources-r4b</artifactId>
+      <version>${hapi.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>ca.uhn.hapi.fhir</groupId>
+      <artifactId>hapi-fhir-structures-r5</artifactId>
+      <version>${hapi.version}</version>
+      <!-- Brings back what is excluded from hapi-fhir-validation above. -->
+      <exclusions>
+        <exclusion><groupId>net.sourceforge.plantuml</groupId><artifactId>plantuml-mit</artifactId></exclusion>
+        <exclusion><groupId>org.eclipse.jgit</groupId><artifactId>org.eclipse.jgit</artifactId></exclusion>
+        <exclusion><groupId>org.xerial</groupId><artifactId>sqlite-jdbc</artifactId></exclusion>
+        <exclusion><groupId>net.sf.saxon</groupId><artifactId>Saxon-HE</artifactId></exclusion>
+        <exclusion><groupId>com.squareup.okhttp3</groupId><artifactId>*</artifactId></exclusion>
+        <exclusion><groupId>com.squareup.okio</groupId><artifactId>*</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>ca.uhn.hapi.fhir</groupId>
+      <artifactId>hapi-fhir-validation-resources-r5</artifactId>
       <version>${hapi.version}</version>
     </dependency>
     <dependency>
@@ -104,7 +133,7 @@
     <dependency>
       <groupId>com.fasterxml.woodstox</groupId>
       <artifactId>woodstox-core</artifactId>
-      <version>6.7.0</version>
+      <version>7.3.0</version>
     </dependency>
 
     <!-- Engine jars, from the local repository. -->
@@ -193,7 +222,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.13.0</version>
+        <version>3.16.0</version>
         <executions>
           <execution>
             <id>default-compile</id>
@@ -223,14 +252,18 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.2.5</version>
+        <version>3.6.1</version>
+        <configuration>
+          <!-- As OIE starts the server (conf/default_modules.vmoptions); FhirAutoResponder needs it. -->
+          <argLine>--add-opens=java.base/java.util=ALL-UNNAMED</argLine>
+        </configuration>
       </plugin>
 
       <!-- The engine wants three jars: shared (serializer + properties), server and client. The FHIR engine jar goes to lib/. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
-        <version>3.4.1</version>
+        <version>3.5.1</version>
         <executions>
           <execution>
             <id>default-jar</id>
@@ -279,7 +312,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
-        <version>3.7.0</version>
+        <version>3.11.0</version>
         <executions>
           <execution>
             <id>engine-libs</id>

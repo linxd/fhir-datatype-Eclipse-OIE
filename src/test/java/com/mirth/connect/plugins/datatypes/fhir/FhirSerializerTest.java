@@ -146,7 +146,7 @@ public class FhirSerializerTest {
             serializer(xmlOut()).fromXML("<Patient><id value=\"p1\"/><shoeSize value=\"42\"/></Patient>");
             fail("expected the unknown element to be refused");
         } catch (MessageSerializerException e) {
-            assertTrue(e.getMessage(), e.getMessage().startsWith("Error converting FHIR to XML"));
+            assertTrue(e.getMessage(), e.getMessage().startsWith("The transformer output is not valid FHIR"));
             assertTrue(e.getMessage(), e.getMessage().contains("shoeSize"));
         }
     }

@@ -54,8 +54,17 @@ public final class FhirXml {
             }
             return Format.XML;
         }
+        if (message.startsWith(JAVASCRIPT_OBJECT, i)) {
+            throw new IllegalArgumentException(JAVASCRIPT_OBJECT_REFUSED);
+        }
         throw new IllegalArgumentException("The message is neither FHIR JSON (starting with '{') nor FHIR XML (starting with '<').");
     }
+
+    /** What a JavaScript object turns into when a script passes it where text is expected. */
+    private static final String JAVASCRIPT_OBJECT = "[object ";
+
+    static final String JAVASCRIPT_OBJECT_REFUSED = "The message is a JavaScript object, not FHIR text. With Transformer Format JSON, msg is an object: "
+            + "pass JSON.stringify(msg) instead of msg or msg.toString().";
 
     /** The message as XML for the transformer: JSON is converted, XML kept; optionally without the FHIR namespace. */
     public static String toTransformerXml(String message, boolean stripNamespace) {

@@ -9,6 +9,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.mirth.connect.donkey.model.message.ConnectorMessage;
+import com.mirth.connect.donkey.model.message.Message;
 import com.mirth.connect.donkey.model.message.Response;
 import com.mirth.connect.donkey.model.message.Status;
 import com.mirth.connect.model.datatype.SerializerProperties;
@@ -125,5 +126,33 @@ public class FhirAutoResponderTest {
         assertEquals("400", cm.getChannelMap().get(FhirAutoResponder.HTTP_STATUS_VARIABLE));
         assertEquals(Boolean.FALSE, cm.getConnectorMap().get(FhirSerializer.VALID_VARIABLE));
         assertTrue(r.getMessage().contains("shoeSize"));
+    }
+
+    /**
+     * #33: the engine builds and caches the merged connector message (for the postprocessor) before
+     * it asks for the response, and the HTTP Listener resolves ${fhirHttpStatus} from that merged
+     * message. Its channel map is a copy; its source map is the source message's own.
+     */
+    @Test
+    public void theHttpListenerSeesTheStatusAndContentType() throws Exception {
+        FhirSerializationProperties p = new FhirSerializationProperties();
+        for (String[] c : new String[][] { { INVALID, "400", "application/fhir+json" }, { VALID, "200", "application/fhir+json" },
+                { INVALID_XML, "400", "application/fhir+xml" } }) {
+            ConnectorMessage source = processed(p, c[0]);
+            // As the engine gives it to the source connector: a read-only view of the receiver's map.
+            source.setSourceMap(java.util.Collections.unmodifiableMap(new java.util.HashMap<String, Object>()));
+            Message message = new Message();
+            message.setMessageId(1L);
+            message.setChannelId("c1");
+            message.getConnectorMessages().put(0, source);
+            ConnectorMessage merged = message.getMergedConnectorMessage(); // the postprocessor
+            new FhirAutoResponder(p).getResponse(Status.TRANSFORMED, c[0], source);
+
+            assertEquals(c[1], merged.getSourceMap().get(FhirAutoResponder.HTTP_STATUS_VARIABLE));
+            assertEquals(c[2], merged.getSourceMap().get(FhirAutoResponder.CONTENT_TYPE_VARIABLE));
+            assertEquals("the merged message is the cached one", merged, message.getMergedConnectorMessage());
+            // Scripts still find them in the channel map.
+            assertEquals(c[1], source.getChannelMap().get(FhirAutoResponder.HTTP_STATUS_VARIABLE));
+        }
     }
 }

@@ -45,11 +45,11 @@ public class FhirBatchProperties extends BatchProperties {
     public void setProperties(Map<String, Object> properties) {
         if (properties != null) {
             if (properties.get("splitType") != null) {
-                splitType = (SplitType) properties.get("splitType");
+                splitType = FhirSerializationProperties.toEnum(SplitType.class, properties.get("splitType"));
             }
 
             if (properties.get("batchScript") != null) {
-                batchScript = (String) properties.get("batchScript");
+                batchScript = properties.get("batchScript").toString();
             }
         }
     }

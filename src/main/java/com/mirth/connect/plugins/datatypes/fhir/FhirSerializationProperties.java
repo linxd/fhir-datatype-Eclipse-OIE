@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import com.mirth.connect.donkey.model.message.SerializationType;
 import com.mirth.connect.donkey.util.DonkeyElement;
 import com.mirth.connect.model.datatype.DataTypePropertyDescriptor;
 import com.mirth.connect.model.datatype.PropertyEditorType;
@@ -24,9 +25,13 @@ import com.mirth.connect.model.datatype.SerializationProperties;
  */
 public class FhirSerializationProperties extends SerializationProperties {
 
-    /** Only R4 for now; R4B and R5 can be added later without changing saved channels. */
+    /** R4 (4.0.1), R4B (4.3.0) and R5 (5.0.0). Channels saved before R4B and R5 were added keep R4. */
     public enum FhirVersion {
-        R4
+        R4, R4B, R5
+    }
+
+    public enum TransformerFormat {
+        XML, JSON
     }
 
     public enum OutputFormat {
@@ -46,6 +51,8 @@ public class FhirSerializationProperties extends SerializationProperties {
     }
 
     private FhirVersion fhirVersion = FhirVersion.R4;
+    private String resourceTypes = "";
+    private TransformerFormat transformerFormat = TransformerFormat.XML;
     private Boolean stripNamespaces = Boolean.TRUE;
     private OutputFormat outputFormat = OutputFormat.JSON;
     private Boolean prettyPrint = Boolean.TRUE;
@@ -64,7 +71,9 @@ public class FhirSerializationProperties extends SerializationProperties {
     @Override
     public Map<String, DataTypePropertyDescriptor> getPropertyDescriptors() {
         Map<String, DataTypePropertyDescriptor> p = new LinkedHashMap<>();
-        p.put("fhirVersion", new DataTypePropertyDescriptor(getFhirVersion(), "FHIR Version", "The FHIR version of the messages. Used for validation and for converting between JSON and XML.", PropertyEditorType.OPTION, FhirVersion.values()));
+        p.put("fhirVersion", new DataTypePropertyDescriptor(getFhirVersion(), "FHIR Version", "The FHIR version of the messages: R4 (4.0.1), R4B (4.3.0) or R5 (5.0.0). Used for validation and for converting between JSON and XML. Profile packages must be for the same version.", PropertyEditorType.OPTION, FhirVersion.values()));
+        p.put("resourceTypes", new DataTypePropertyDescriptor(getResourceTypes(), "Resource Types", "The resource types this connector accepts, separated by commas, for example Patient, Observation, Bundle. A message of another type, or a Bundle with an entry of another type, is invalid: Invalid Messages decides whether it is rejected or accepted. A Bundle needs the types of its entries in the list too. Names are case-sensitive. Leave empty to accept every type. This is a check on the input; it does not make the validator use less memory.", PropertyEditorType.STRING));
+        p.put("transformerFormat", new DataTypePropertyDescriptor(getTransformerFormat(), "Transformer Format", "XML: the transformer works on FHIR XML with E4X (msg.name.family.@value). JSON: msg is a JavaScript object of the FHIR JSON (msg.name[0].family), and the outbound message is made from it. With JSON, decimals lose trailing zeros (1.50 becomes 1.5), as in any JavaScript. On outbound properties it sets the format of the outbound template (tmp).", PropertyEditorType.OPTION, TransformerFormat.values()));
         p.put("stripNamespaces", new DataTypePropertyDescriptor(isStripNamespaces(), "Strip Namespaces", "If checked, the FHIR namespace (http://hl7.org/fhir) is removed from the XML the transformer works on, so you can write msg.name.family.@value instead of using namespaces. It is put back when the message leaves the transformer. The XHTML namespace of narratives (text.div) is kept.", PropertyEditorType.BOOLEAN));
         p.put("outputFormat", new DataTypePropertyDescriptor(getOutputFormat(), "Output Format", "The format of the outbound message (the encoded data): FHIR JSON or FHIR XML. Messages come in as either; the transformer always works on FHIR XML. After a transformer the FHIR engine writes the message in the element order of the specification.", PropertyEditorType.OPTION, OutputFormat.values()));
         p.put("prettyPrint", new DataTypePropertyDescriptor(isPrettyPrint(), "Pretty Print", "If checked, outbound JSON and XML created by the FHIR engine are indented.", PropertyEditorType.BOOLEAN));
@@ -86,44 +95,66 @@ public class FhirSerializationProperties extends SerializationProperties {
             return;
         }
         if (properties.get("fhirVersion") != null) {
-            fhirVersion = (FhirVersion) properties.get("fhirVersion");
+            fhirVersion = toEnum(FhirVersion.class, properties.get("fhirVersion"));
+        }
+        if (properties.get("resourceTypes") != null) {
+            resourceTypes = properties.get("resourceTypes").toString();
+        }
+        if (properties.get("transformerFormat") != null) {
+            transformerFormat = toEnum(TransformerFormat.class, properties.get("transformerFormat"));
         }
         if (properties.get("stripNamespaces") != null) {
-            stripNamespaces = (Boolean) properties.get("stripNamespaces");
+            stripNamespaces = toBoolean(properties.get("stripNamespaces"));
         }
         if (properties.get("outputFormat") != null) {
-            outputFormat = (OutputFormat) properties.get("outputFormat");
+            outputFormat = toEnum(OutputFormat.class, properties.get("outputFormat"));
         }
         if (properties.get("prettyPrint") != null) {
-            prettyPrint = (Boolean) properties.get("prettyPrint");
+            prettyPrint = toBoolean(properties.get("prettyPrint"));
         }
         if (properties.get("validateInbound") != null) {
-            validateInbound = (Boolean) properties.get("validateInbound");
+            validateInbound = toBoolean(properties.get("validateInbound"));
         }
         if (properties.get("validateOutbound") != null) {
-            validateOutbound = (Boolean) properties.get("validateOutbound");
+            validateOutbound = toBoolean(properties.get("validateOutbound"));
         }
         if (properties.get("invalidMessages") != null) {
-            invalidMessages = (InvalidMessages) properties.get("invalidMessages");
+            invalidMessages = toEnum(InvalidMessages.class, properties.get("invalidMessages"));
         }
         if (properties.get("failOn") != null) {
-            failOn = (FailOn) properties.get("failOn");
+            failOn = toEnum(FailOn.class, properties.get("failOn"));
         }
         if (properties.get("profiles") != null) {
-            profiles = (String) properties.get("profiles");
+            profiles = properties.get("profiles").toString();
         }
         if (properties.get("requiredProfile") != null) {
-            requiredProfile = (String) properties.get("requiredProfile");
+            requiredProfile = properties.get("requiredProfile").toString();
         }
         if (properties.get("unknownCodeSystems") != null) {
-            unknownCodeSystems = (UnknownCodeSystems) properties.get("unknownCodeSystems");
+            unknownCodeSystems = toEnum(UnknownCodeSystems.class, properties.get("unknownCodeSystems"));
         }
         if (properties.get("anyExtensionsAllowed") != null) {
-            anyExtensionsAllowed = (Boolean) properties.get("anyExtensionsAllowed");
+            anyExtensionsAllowed = toBoolean(properties.get("anyExtensionsAllowed"));
         }
         if (properties.get("terminologyServer") != null) {
-            terminologyServer = (String) properties.get("terminologyServer");
+            terminologyServer = properties.get("terminologyServer").toString();
         }
+    }
+
+    /**
+     * An option value as the enum. The Administrator passes the enum itself; the web admin's Web
+     * Support plugin passes its name as text (it only converts Booleans and Integers back).
+     */
+    static <E extends Enum<E>> E toEnum(Class<E> type, Object value) {
+        if (type.isInstance(value)) {
+            return type.cast(value);
+        }
+        return Enum.valueOf(type, value.toString().trim());
+    }
+
+    /** A Boolean option, also from "true" / "false" text. */
+    static Boolean toBoolean(Object value) {
+        return value instanceof Boolean ? (Boolean) value : Boolean.valueOf(value.toString().trim());
     }
 
     /** The options for {@link FhirEngine#validate}. */
@@ -144,6 +175,31 @@ public class FhirSerializationProperties extends SerializationProperties {
 
     public void setFhirVersion(FhirVersion fhirVersion) {
         this.fhirVersion = fhirVersion;
+    }
+
+    public String getResourceTypes() {
+        return resourceTypes == null ? "" : resourceTypes;
+    }
+
+    public void setResourceTypes(String resourceTypes) {
+        this.resourceTypes = resourceTypes;
+    }
+
+    public TransformerFormat getTransformerFormat() {
+        return transformerFormat == null ? TransformerFormat.XML : transformerFormat;
+    }
+
+    public void setTransformerFormat(TransformerFormat transformerFormat) {
+        this.transformerFormat = transformerFormat;
+    }
+
+    /**
+     * What msg is in the transformer. The engine asks the inbound properties for this (and the outbound
+     * properties for the outbound template), so it can differ per connector; see DataTypeFactory.
+     */
+    @Override
+    public SerializationType getSerializationType() {
+        return getTransformerFormat() == TransformerFormat.JSON ? SerializationType.JSON : SerializationType.XML;
     }
 
     public boolean isStripNamespaces() {
@@ -262,6 +318,8 @@ public class FhirSerializationProperties extends SerializationProperties {
     public Map<String, Object> getPurgedProperties() {
         Map<String, Object> purged = new HashMap<>();
         purged.put("fhirVersion", getFhirVersion());
+        purged.put("resourceTypeCount", FhirResourceTypes.parse(getResourceTypes()).size());
+        purged.put("transformerFormat", getTransformerFormat());
         purged.put("stripNamespaces", isStripNamespaces());
         purged.put("outputFormat", getOutputFormat());
         purged.put("prettyPrint", isPrettyPrint());

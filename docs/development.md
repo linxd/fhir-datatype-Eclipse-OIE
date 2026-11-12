@@ -35,7 +35,7 @@ This guide is for people who build, change or release the FHIR Data Type. For us
 | `docs/` | This guide and the code template reference. |
 | `assembly.xml` | How the extension zip is laid out. |
 | `oie.json` | The manifest for the OIE Community Store catalog. |
-| `.github/` | Workflows for the catalog pull request and the Jira issue sync. |
+| `.github/` | Workflows: build, test and smoke test on every push (`build.yml`), the catalog pull request and the Jira issue sync; their scripts in `.github/scripts/`, the smoke test channel in `.github/smoke/`, and Dependabot (`dependabot.yml`). |
 
 `...` is `com/mirth/connect/plugins/datatypes`. The package name follows the engine's own data types, so the plugin looks like a built-in one.
 
@@ -45,7 +45,7 @@ This guide is for people who build, change or release the FHIR Data Type. For us
 
 - **JDK 17.** The plugin jars target Java 11, the engine jar Java 17 (see [Two Java levels](#two-java-levels)); one JDK 17 builds both.
 - **Maven 3.8** or later.
-- **The OIE 4.6.0 engine jars** in your local Maven repository. They are not published to Maven Central, so install them once from an OIE 4.6.0 installation:
+- **The OIE 4.6.0 engine jars** in your local Maven repository. They are not published to Maven Central. `bash .github/scripts/install-oie-jars.sh 4.6.0` downloads the engine release from GitHub, checks its SHA-256 and installs them (CI does the same); or install them once from an OIE 4.6.0 installation:
 
 | Maven artifact (`com.mirth.connect`, version `4.6.0`) | File in the OIE installation |
 | --- | --- |
@@ -73,7 +73,7 @@ install client-core   server-lib/mirth-client-core.jar
 mvn clean package
 ```
 
-The result is `target/datatype-fhir-<version>.zip`, about 80 MB. Always use `clean`: `target/lib` keeps jars from an earlier build, and a dependency you excluded would otherwise still end up in the zip.
+The result is `target/datatype-fhir-<version>.zip`, about 117 MB. Always use `clean`: `target/lib` keeps jars from an earlier build, and a dependency you excluded would otherwise still end up in the zip.
 
 `mvn package` runs the tests first. Add `-DskipTests` to skip them, or `-o` to build offline once everything is downloaded.
 
@@ -129,6 +129,7 @@ The other shared classes:
 | `FhirOperationOutcome` | Builds OperationOutcome JSON without HAPI. |
 | `FhirValidation` | The result of one validation: issues, valid or not, summary. |
 | `FhirBundleSplitter` | Splits a Bundle into one message per entry. Pure Java. |
+| `FhirResourceTypes` | The *Resource Types* check: the type of the message and of its Bundle entries against the list. Pure Java. |
 | `FhirTools` | Static functions for channel scripts. |
 | `FhirEngine`, `FhirEngineLoader` | The boundary to HAPI FHIR; see [The isolated FHIR engine](#the-isolated-fhir-engine). |
 | `FhirVocabulary` | Required by the engine; adds no descriptions. |
@@ -140,13 +141,18 @@ The other shared classes:
 ```
 inbound message (FHIR JSON or XML)
    │
-   ├─ populateMetaData()              resource type, version, inbound validation
+   ├─ populateMetaData()              resource type, version, Resource Types check, inbound validation
    │                                  → connector map fhirValid, fhirIssueCount, fhirIssues, fhirOperationOutcome
    │
-   ├─ with filter/transformer steps:
+   ├─ with filter/transformer steps, Transformer Format XML:
    │     toXML()                      refuse DOCTYPE, reject if invalid, JSON→XML (FhirXml), strip namespace
    │        ↓ transformer (E4X on msg)
    │     fromXML()                    refuse DOCTYPE, add namespace, encode(fromTransformer = true)
+   │
+   ├─ with filter/transformer steps, Transformer Format JSON:
+   │     toJSON()                     refuse DOCTYPE, reject if invalid, JSON unchanged / XML→JSON (HAPI)
+   │        ↓ transformer (msg = JSON.parse(...), JSON.stringify(msg) afterwards)
+   │     fromXML() → fromJSON()       encode(fromTransformer = true)
    │
    └─ without steps:
          transformWithoutSerializing()  refuse DOCTYPE, reject if invalid, encode(fromTransformer = false)
@@ -155,8 +161,11 @@ encode():  outbound validation (optional, always rejects)
            XML  → JSON  HAPI toJson
            JSON → XML   HAPI toXml
            XML  → XML   HAPI reorderXml, only after a transformer and only on the server
+           JSON → JSON  HAPI reorderJson, only after a transformer and only on the server
            otherwise    unchanged
 ```
+
+**Transformer Format JSON.** OIE normally fixes a data type's transformer format (`DataTypeDelegate.getDefaultSerializationType`), but `DataTypeFactory` first asks `SerializationProperties.getSerializationType()` of the inbound properties, which `FhirSerializationProperties` overrides. The engine then calls `toJSON`, and its `JavaScriptBuilder` wraps the steps in `msg = JSON.parse(...)` and `JSON.stringify(msg)`. For the outbound side the engine asks `DeserializationProperties`, which this data type does not have, so it stays XML and calls `fromXML` with the JSON: `fromXML` detects that and hands it to `fromJSON`. On outbound properties `getSerializationType()` only decides the template (`tmp`), as `DataTypeFactory` uses the serialization properties for the template type.
 
 Points worth knowing:
 
@@ -165,6 +174,8 @@ Points worth knowing:
 - **JSON to transformer XML is pure Java** (`FhirXml.jsonToXml`), so the transformer sees exactly what came in: property order kept, nothing added or dropped. The way back uses HAPI with a `StrictErrorHandler`, so an element that is not in the specification is refused instead of silently dropped.
 - **XML after a transformer is written again** (`reorderXml`) because E4X appends elements at the end, and FHIR XML requires the order of the specification.
 - **In the Administrator** (`FhirEngineLoader.isServer()` is false) validation is skipped and HAPI is never loaded.
+- **Resource Types comes before validation.** `inboundValidation` first checks the list (`FhirResourceTypes.check`). A refused message gets one error issue per resource of a wrong type, wrapped in a `FhirValidation`, and is not validated further. Because it is a `FhirValidation`, *Invalid Messages*, the connector map and the auto responder treat it like any validation error. With a list set, `isSerializationRequired(true)` is true also when *Validate Inbound* is off, so the engine still calls the serializer. Like validation, the check is skipped in the Administrator.
+- **Resource Types comes before validation.** `inboundValidation` first checks the list (`FhirResourceTypes.check`); a refused message gets one error issue per wrong resource, wrapped in a `FhirValidation`, and is not validated further. Because it is a `FhirValidation`, *Invalid Messages*, the connector map and the auto responder treat it like any validation error. With a list set, `isSerializationRequired(true)` is true also when *Validate Inbound* is off, so the engine calls the serializer. Like validation, it is skipped in the Administrator.
 
 ## The isolated FHIR engine
 
@@ -200,16 +211,30 @@ System properties for development:
 `HapiFhirEngine.build` creates a `FhirValidator` with this support chain, in this order:
 
 1. `PrePopulatedValidationSupport` with the profiles from *Profile Packages*: `.tgz` NPM packages and single conformance resources (StructureDefinition, ValueSet, CodeSystem, ConceptMap, NamingSystem) in JSON or XML. Other resources in a package are skipped.
-2. `DefaultProfileValidationSupport`: the FHIR R4 specification.
+2. `LazySpecificationSupport`: the specification of the chosen FHIR version (R4, R4B or R5), with the terminology read on demand (see *Memory* below). Before 1.5.1 this was HAPI's `DefaultProfileValidationSupport`.
 3. `CommonCodeSystemsTerminologyService`, `InMemoryTerminologyServerValidationSupport`, `SnapshotGeneratingValidationSupport`.
 4. `RemoteTerminologyServiceValidationSupport`, only when a terminology server is set.
 5. `UnknownCodeSystemWarningValidationSupport` with the *Unknown Code Systems* severity.
 
 The instance validator refuses unknown profiles, accepts unknown extensions when the property says so, and ignores best-practice warnings (such as dom-6, "should have narrative"), which would flag nearly every message.
 
-Building a validator takes seconds and about 300 MB of heap, so validators are cached per combination of options. The required profile is passed per call and is not part of the cache key. `FhirSerializer` starts building in a background thread (`warmUp`) when a channel with validation is deployed, so the first message does not wait as long.
+Building a validator takes seconds, so validators are cached per combination of options. The required profile is passed per call and is not part of the cache key. *Resource Types* is not an engine option either: it does not change what the validator loads, so channels with different lists share one validator. Issue #25 proposed loading only the StructureDefinitions of the listed types, but the validator asks for all StructureDefinitions at once (`fetchAllStructureDefinitions`) and terminology is already read on demand since 1.5.1, so a list would hardly save memory and a missing data type or profile would give confusing errors (see [lazy-loading-measurement.md](lazy-loading-measurement.md)). `FhirSerializer` starts building in a background thread (`warmUp`) when a channel with validation is deployed, so the first message does not wait as long.
+
+**The specification (`LazySpecificationSupport`).** The heap goes to the specification, not to the validators. HAPI's `DefaultProfileValidationSupport` parses all of it up front and keeps it in a static map per FHIR version (`ourImplementations`): R4 190 MB, R5 520 MB with HAPI 8.12.1. The validator asks for all StructureDefinitions at once, but for ValueSets and CodeSystems one URL at a time. Since 1.5.1, `LazySpecificationSupport` takes the place of HAPI's support: it parses the StructureDefinitions, keeps ValueSets and CodeSystems as gzipped JSON (a few MB), and parses one the first time the validator asks for it. It reads the same files in the same order as HAPI (`DefaultProfileValidationSupportBundleStrategy` for R4 and R4B, which also uses the v2 and v3 tables of R4; the three packages of `DefaultProfileValidationSupportNpmStrategy` for R5), a later resource with the same URL replacing an earlier one. It does not override `isValueSetSupported` / `isCodeSystemSupported`, just like HAPI's support; doing so changes how the chain routes code validation. Result: R5 300 MB, R4 130 MB. `LazySpecificationTest` checks that R4, R4B and R5 give exactly the same issues as HAPI's own support for 40 messages; the measurement is in [lazy-loading-measurement.md](lazy-loading-measurement.md).
+
+There is one `LazySpecificationSupport` per version, shared by all validators of that version, and it is also the context's own support (`FhirContext.setValidationSupport`), so HAPI never builds its static copy behind our back. The plugin drops the cached validators and the specification of a version that is no longer used:
+
+- `server.FhirChannelPlugin`, a `ChannelPlugin` registered in `plugin.xml`, gives `FhirValidatorUsage` the options of every FHIR data type with validation in the deployed channels (`FhirChannelOptions`, read from `ChannelController.getDeployedChannelById`). After every deploy and undeploy (the global hooks, which run once all channels of the action are done) it calls `FhirEngine.retainValidators` with those options and no idle time: everything else goes at once, including validators used only from scripts, which are built again when needed.
+- Once the engine has validated, a daemon thread checks every minute with an idle time of 15 minutes (`IDLE_MILLIS`), so validators used only by `FhirTools` are released also when nothing is deployed or undeployed. It does not depend on garbage collection: an idle server hardly collects, which is why tracking serializers in a weak map did not work.
+- When no validator of a version is left, `HapiFhirEngine` drops its context and specification for that version. It also removes the version from `ourImplementations` by reflection, in case anything filled it after all; the map belongs to this plugin alone, because HAPI is loaded in the plugin's class loader.
+
+Validators use a context of their own (`FhirContext.forVersion`), not the static `forCached` one, which only parses and encodes.
+
+Released heap is only reused or returned to the operating system after a garbage collection, and an idle JVM hardly collects. Measured with Java 17 (G1, `-Xmx1g`), R4 and R5 released: without options the heap stayed at 860 MB used for two minutes; with `-XX:G1PeriodicGCInterval=10000` it was 230 MB used after one minute and the committed heap went from 1024 to 734 MB after two. The README advises `-XX:G1PeriodicGCInterval=60000`.
 
 Profile files are read once, when the validator is built: after changing them, restart the channel or the server.
+
+`loadProfiles` checks that profiles match the *FHIR Version* (`checkVersion`, on major.minor): the `fhirVersions` in a package's `package.json` and the `fhirVersion` of a single StructureDefinition. A mismatch fails the build of the validator, so every message gets the error, instead of HAPI silently validating against profiles of another version.
 
 ## Properties and saved channels
 
@@ -223,7 +248,7 @@ Channels are stored with XStream, which **does not run constructors**. A propert
 
 1. Add the field with its default to `FhirSerializationProperties` (or `FhirBatchProperties`), with a null-safe getter.
 2. Add it to `getPropertyDescriptors()` (label and tooltip in the Swing Administrator) and `setProperties()`.
-3. If the engine needs it, add an option key to `FhirEngine` and put it in `engineOptions()`. It then automatically becomes part of the validator cache key.
+3. If the engine needs it, add an option key to `FhirEngine` and put it in `engineOptions()`. It then automatically becomes part of the validator cache key. Leave out what does not change the validator (such as *Required Profile* and *Resource Types*): every distinct set of options builds and keeps a validator of its own.
 4. Add it to `webadmin/web/plugin.js`, with the same key, label, default and tooltip.
 5. Document it in the README's property table.
 6. Test that a channel saved with the previous version still deploys.
@@ -232,7 +257,7 @@ Channels are stored with XStream, which **does not run constructors**. A propert
 
 **Batch.** With *Process Batch* on, the engine asks `FhirDataTypeServerPlugin.getBatchAdaptorFactory` for an adaptor. `FhirBatchAdaptor` either splits with `FhirBundleSplitter` (*Bundle Entry*) or runs the user's split script (*JavaScript*, modelled on the engine's other batch adaptors). The source map variables (`fhirBundleType`, `fhirEntryIndex`, ...) are set in an overridden `getMessage()`, because the source connector copies the batch message's source map right after that call while `getNextMessage` already reads ahead.
 
-**Responses.** For *Auto-generate* source responses, `FhirAutoResponder` returns an OperationOutcome in the format of the incoming message, and puts `fhirHttpStatus` (200, 400, 500) and `fhirContentType` in the channel map for the HTTP Listener.
+**Responses.** For *Auto-generate* source responses, `FhirAutoResponder` returns an OperationOutcome in the format of the incoming message, and puts `fhirHttpStatus` (200, 400, 500) and `fhirContentType` in the channel map and the source map for the HTTP Listener. The source map is needed ([#33](https://github.com/matthydehoog/fhir-datatype-Eclipse-OIE/issues/33)): the listener resolves `${...}` from `Message.getMergedConnectorMessage()`, which the engine builds once and caches when the postprocessor runs, before the response is generated. That merged message has a *copy* of the channel map, but the source connector message's own source map. The engine gives the source connector a read-only view of that map (`Collections.unmodifiableMap`), so `FhirAutoResponder.writable` writes to the map behind it by reflection. That needs `java.util` opened to the plugin, which OIE's launcher does (`--add-opens=java.base/java.util=ALL-UNNAMED` in `conf/default_modules.vmoptions`; Surefire gets the same option in `pom.xml`). Without it the listener falls back to 200, or 500 for an error. The smoke test checks it on every engine version.
 
 ## Code templates and the web administrator
 
@@ -250,9 +275,10 @@ The web administrator's properties panel is `webadmin/web/plugin.js`. It is a st
 
 ## Dependencies
 
-HAPI FHIR pulls in far more than validating R4 needs. `pom.xml` excludes what was found unnecessary, which keeps the zip at about 80 MB. The comments in `pom.xml` list what was tried:
+HAPI FHIR pulls in far more than validating needs. `pom.xml` excludes what was found unnecessary. The comments in `pom.xml` list what was tried:
 
-- **Excluded:** dstu2, dstu2016may, r4b, PlantUML, JGit, SQLite, Saxon, OGNL, xmlsec, commonmark, Apache httpclient (from `hapi-fhir-validation`), OkHttp/Okio/Kotlin.
+- **Per FHIR version:** `hapi-fhir-structures-<version>` and `hapi-fhir-validation-resources-<version>` for R4, R4B and R5. `hapi-fhir-structures-r5` gets the same exclusions as `hapi-fhir-validation`, otherwise it brings PlantUML and JGit back.
+- **Excluded:** dstu2, dstu2016may, PlantUML, JGit, SQLite, Saxon, OGNL, xmlsec, commonmark, Apache httpclient (from `hapi-fhir-validation`), OkHttp/Okio/Kotlin.
 - **Tried and needed:** dstu3 and the convertors (profiles are converted internally), Thymeleaf, ICU4J, nimbus-jose-jwt (Bundle validation), `hapi-fhir-client` with its HTTP client (terminology server).
 
 When you change an exclusion, run all tests **and** validate a Bundle, a resource against a Nictiz package and a code against a terminology server in a real OIE: a missing class often only shows on one path.
@@ -265,7 +291,9 @@ Versions that must match the engine:
 | `commons-lang3` (provided) | The engine's version, 3.20.0. HAPI's terminology client needs 3.18 or later. |
 | Engine jars (`oie.version`) | The engine version you compile against. |
 
-**Updating HAPI FHIR:** change `hapi.version`, run `mvn clean package`, and check the security advisories for HAPI FHIR and `org.hl7.fhir.core` (see the README's XXE section, which names the versions).
+**R4B needs the R4 resources.** `LazySpecificationSupport`, like HAPI, takes the v2 and v3 code tables for R4B from `hapi-fhir-validation-resources-r4`. Keep that library, also if R4 itself were ever dropped.
+
+**Updating HAPI FHIR:** change `hapi.version`, run `mvn clean package`, and check the security advisories for HAPI FHIR and `org.hl7.fhir.core` (see the README's XXE section, which names the versions). `LazySpecificationSupport` copies the file lists of HAPI's `DefaultProfileValidationSupportBundleStrategy` (R4, R4B) and `DefaultProfileValidationSupportNpmStrategy` (R5): compare them with the new HAPI version (the package names contain versions, such as `hl7.terminology-5.1.0.tgz`). `LazySpecificationTest` fails when the results drift apart, and `LazySpecificationSupport.load` refuses to start when a file is missing altogether.
 
 ## Testing
 
@@ -273,19 +301,48 @@ Versions that must match the engine:
 mvn test
 ```
 
-There are 54 tests (JUnit 4). They run without OIE: the engine jars are on the test classpath, and the tests that need HAPI set `fhir.engine.direct=true`, so HAPI is loaded from the Maven classpath instead of `lib/`.
+There are 98 tests (JUnit 4). They run without OIE: the engine jars are on the test classpath, and the tests that need HAPI set `fhir.engine.direct=true`, so HAPI is loaded from the Maven classpath instead of `lib/`.
 
 | Test | Covers |
 | --- | --- |
 | `FhirSerializerTest` | Inbound and outbound conversion, validation, reject and accept, element order, DOCTYPE refusal. |
+| `FhirResourceTypesTest` | *Resource Types*: the list, root and Bundle entry checks in JSON and XML, reject and accept, without validation, the auto response, channels saved without the property, and that the validator cache key is unchanged. |
 | `FhirXmlTest` | Format detection, JSON to XML, namespaces, `hasDoctype`. |
 | `FhirToolsTest` | The script functions. |
+| `FhirTransformerJsonTest` | Transformer Format JSON: the transformer script run in Rhino as the engine builds it, XML and JSON in and out, misspelled elements. |
+| `FhirVersionTest` | R4B and R5: version-only elements and resources, conversion, `FhirTools` with a version, profile files and packages of another version. |
+| `FhirValidatorUsageTest`, `server/FhirChannelOptionsTest`, `engine/HapiFhirEngineRetainTest` | Releasing validators and specifications that are no longer used. |
+| `engine/LazySpecificationTest` | The lazy specification gives the same issues as HAPI's own for R4, R4B and R5 (40 messages, including the build.fhir.org examples), and HAPI's static copy stays empty. |
 | `FhirBundleSplitterTest`, `server/FhirBatchAdaptorTest` | Batch splitting and source map variables, using `examples/observation-bundle.json`. |
 | `server/FhirAutoResponderTest` | OperationOutcome responses and HTTP status. |
 | `client/FhirDataTypeCodeTemplatePluginTest` | Templates, their contexts, the snippets in Rhino, and the example library. |
 | `TerminologyServerTest` | The terminology server option against `https://tx.fhir.org/r4`. Skipped when there is no network. |
 
 Run tests from the repository root: some read files from `examples/`.
+
+### On GitHub (CI)
+
+`.github/workflows/build.yml` runs on every push to `main`, every pull request and every version tag:
+
+| Job | What it does |
+| --- | --- |
+| Build | `mvn package` against the engine jars of every OIE version in `<mirthVersion>`: 4.6.0 on Java 17 (this build's zip is kept as the artifact `datatype-fhir`), 4.7.0 on Java 17 and 21. The jars come from the engine's GitHub release (`install-oie-jars.sh`, checked against its `sha256sums`) and are cached. The 4.6.0 job also runs `check-versions.sh`: the four version numbers must agree, and match the tag on a tag build. |
+| Smoke test | Installs the artifact zip in a real engine, 4.6.0 on Java 17 and 4.7.0 on Java 21, with 1 GB of heap (`smoke-test.sh`). It checks that the engine loads the extension, deploys the channel of `.github/smoke/SmokeChannel.java` (HTTP Listener, *Resource Types* `Patient`, auto-generated responses, XML out) and posts a valid JSON and XML Patient, an invalid Patient and an Observation. On failure the server log, the responses and the channel are kept as an artifact. |
+| Release | Only on a `v*` tag; see [Releasing](#releasing). |
+
+The smoke test also runs locally, with Git Bash on Windows too; use other ports if an engine is already running:
+
+```bash
+mvn package
+SMOKE_HTTP_PORT=18080 SMOKE_HTTPS_PORT=18443 SMOKE_LISTENER_PORT=18090 \
+  bash .github/scripts/smoke-test.sh 4.7.0 target/datatype-fhir-<version>.zip
+```
+
+It downloads the engine (about 240 MB, kept in `~/.cache/oie` or `OIE_DOWNLOADS`), unpacks it in a temporary folder (`SMOKE_DIR`) and stops it afterwards. It never touches an installed engine.
+
+**Dependabot** (`.github/dependabot.yml`) opens weekly pull requests for Maven dependencies and monthly ones for the GitHub Actions. HAPI FHIR and `org.hl7.fhir.core` come as one group; follow *Updating HAPI FHIR* under [Dependencies](#dependencies) before merging. The engine jars and the libraries the engine already ships (Log4j, commons-lang3, Rhino, XStream) are ignored: they must match the engine, not the newest version.
+
+**A new OIE version:** add it to `<mirthVersion>` (see [Releasing](#releasing)) and to both matrices in `build.yml`.
 
 ## Trying it in OIE
 
@@ -298,16 +355,17 @@ The server log shows HAPI's warnings and errors. *The FHIR engine is not availab
 
 ## Common changes
 
-### Supporting another FHIR version (R4B, R5)
+### Supporting another FHIR version (R6)
 
-The design keeps this a local change:
+R4B and R5 were added this way (1.5.0); a next version, once HAPI FHIR supports it, follows the same steps:
 
-1. Add the version to `FhirSerializationProperties.FhirVersion` (saved channels keep R4).
-2. Add `hapi-fhir-structures-<version>` and `hapi-fhir-validation-resources-<version>` to `pom.xml`, and remove the matching exclusion (r4b is excluded today).
+1. Add the version to `FhirSerializationProperties.FhirVersion` (saved channels keep R4) and to the error texts that list the versions (`FhirTools`, `HapiFhirEngine.context()`).
+2. Add `hapi-fhir-structures-<version>` and `hapi-fhir-validation-resources-<version>` to `pom.xml`, with the exclusions `hapi-fhir-validation` has, and check the dependency tree for new libraries.
 3. Map the version in `HapiFhirEngine.context()`.
-4. `FhirTools.toJson` and `toXml` use `"R4"`; give them a version parameter or overload.
-5. `FhirOperationOutcome` writes R4; check that the structure is the same in the new version.
-6. Add the option to `webadmin/web/plugin.js` and the README.
+4. Tell `LazySpecificationSupport.load` where HAPI keeps the specification of that version (the file list of HAPI's strategy for it), and add the version to `LazySpecificationTest`.
+5. Add a test with an element or resource that only exists in the new version (see `FhirVersionTest`).
+6. `FhirOperationOutcome` writes one structure for all versions; check that it is the same in the new version.
+7. Add the option to `webadmin/web/plugin.js` and the README.
 
 ### Changing what goes into a message
 
@@ -322,9 +380,15 @@ Keep the pure-Java paths (`FhirXml`, `FhirJson`) faithful: they must not reorder
    - `oie.json` (`"version"`)
    - `webadmin/plugin.json` (`"version"`)
 3. **Engine versions.** `<mirthVersion>` in `plugin.xml` lists every OIE version the extension may load on, comma-separated (now `4.6.0,4.7.0`). OIE only loads an extension whose list contains its **exact** version, so a new OIE release needs a new plugin release. `minEngineVersion` in `oie.json` is the lowest supported version for the catalog.
-4. **Build and test.** `mvn clean package`, then test the zip in OIE.
+4. **Build and test.** The pull request's checks must be green (build and smoke test on every OIE version). Test what the smoke test does not cover in OIE: the zip is the `datatype-fhir` artifact of the pull request's build, or `mvn clean package`.
 5. **Merge** the pull request.
-6. **Release.** Create the release on GitHub with the zip and its SHA-256 in the notes:
+6. **Release.** Either push a tag, and CI builds, smoke-tests and creates the release with the zip and a `.sha256` file and generated notes (edit the notes afterwards):
+
+   ```bash
+   git tag v1.6.1 origin/main && git push origin v1.6.1
+   ```
+
+   Or create the release by hand with the zip you tested and its SHA-256 in the notes. CI then builds the tag too, but `release.sh` leaves a release that already has the zip alone, because a new build is a different file with another checksum:
 
    ```bash
    sha256sum target/datatype-fhir-1.4.2.zip
@@ -333,7 +397,7 @@ Keep the pure-Java paths (`FhirXml`, `FhirJson`) faithful: they must not reorder
    ```
 
    Release notes describe what changed for the user, how to upgrade (replace the extension, restart; channel settings are kept), and the SHA-256.
-7. **Catalog.** Publishing the release triggers `catalog-pr.yml`, which files a pull request to the [OIE Community Store catalog](https://github.com/gibson9583/oie-community-catalog) from the fork `<owner>/oie-community-catalog`, using `oie.json` at the tag. It needs the repository secret `CATALOG_TOKEN` (a classic PAT with `public_repo`); without it the job is skipped. Close earlier catalog pull requests of this plugin that are still open.
+7. **Catalog.** Publishing the release triggers `catalog-pr.yml` (a release created by CI calls it from `build.yml`, because a release made with `GITHUB_TOKEN` fires no event), which files a pull request to the [OIE Community Store catalog](https://github.com/gibson9583/oie-community-catalog) from the fork `<owner>/oie-community-catalog`, using `oie.json` at the tag. It needs the repository secret `CATALOG_TOKEN` (a classic PAT with `public_repo`); without it the job is skipped. Close earlier catalog pull requests of this plugin that are still open.
 8. **Issues.** New GitHub issues get a Jira issue through `jira-issue.yml` (variables `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_PROJECT_KEY`, secret `JIRA_API_TOKEN`). Closing the GitHub issue does not close the Jira issue: set it to *Done* yourself.
 9. **Documentation.** Update the README, `docs/`, and the [online course](https://eclipse-oie.moodiy.cloud/course/view.php?id=9) when behaviour changes.
 

@@ -1,15 +1,17 @@
 # FHIR 数据类型（Open Integration Engine 版）
 
+[![Build](https://github.com/matthydehoog/fhir-datatype-Eclipse-OIE/actions/workflows/build.yml/badge.svg)](https://github.com/matthydehoog/fhir-datatype-Eclipse-OIE/actions/workflows/build.yml)
+
 一个用于 [Eclipse Open Integration Engine](https://github.com/OpenIntegrationEngine)（OIE，Mirth Connect 的分支）的 HL7 FHIR 数据类型：
 
 - **FHIR JSON 和 FHIR XML 入站**：自动逐报文检测格式。
 - **转换器中使用 FHIR XML**（E4X），可选择去除 FHIR 命名空间：`msg.name.family.@value`。
 - **FHIR JSON 或 FHIR XML 出站**，按连接器选择。
-- 使用 [HAPI FHIR](https://hapifhir.io) 针对 FHIR R4 规范及您自定义的 Profile 和包（例如 Nictiz zib2020 / nl-core）进行**验证**。检查结构、数据类型、基数、必需元素、值集绑定和约束规则。
+- 使用 [HAPI FHIR](https://hapifhir.io) 针对 FHIR R4、R4B 或 R5 规范及您自定义的 Profile 和包（例如 Nictiz zib2020 / nl-core）进行**验证**。检查结构、数据类型、基数、必需元素、值集绑定和约束规则。
 - **无效报文**可被拒绝（状态 ERROR，问题作为错误信息）或接受并将问题存入连接器映射；按连接器配置。
 - **批处理**：Bundle 可拆分为每个条目一条报文，各自独立验证。
 
-支持 FHIR R4（4.0.1）。设计允许后续添加 R4B 和 R5 而不改变已保存的通道。
+支持 FHIR R4（4.0.1）、R4B（4.3.0）和 R5（5.0.0），通过 *FHIR 版本* 按连接器选择。使用插件早期版本保存的通道保持 R4。
 
 ## 在线课程
 
@@ -21,16 +23,22 @@
 2. 在管理器中：*Settings > Extensions > Install Extension*，或将其解压到 `<OIE_HOME>/extensions/`。
 3. 重启 OIE 服务。
 
-**内存。** 验证器会加载整个 FHIR 规范：约 300 MB 堆内存，使用大型 Profile 包时更多。为服务器分配至少 1 GB：在 `<OIE_HOME>/conf/custom.vmoptions` 中单独一行添加 `-Xmx1g`（或更多），然后重启服务。不要编辑 `oieserver.vmoptions` 或 `oieservice.vmoptions`：两者都包含 `conf/custom.vmoptions`，因此该设置对服务和 `oieserver` 均生效。部署后的首次验证需要几秒钟；插件在通道部署时开始加载，之后一条报文只需几十毫秒。
+**内存。** 验证器对每个使用中的 FHIR 版本加载一次 FHIR 规范：R4 约 130 MB 堆内存，R5 约 300 MB，使用大型 Profile 包时更多。自 1.5.1 起，值集和代码系统仅在报文需要时才读取（此前：R4 约 190 MB，R5 约 520 MB）。使用相同版本的通道共享同一份规范。当不再有已部署的通道使用某个版本时（取消部署，或切换到其他版本），该版本会在部署或取消部署后立即释放；仅由脚本（`FhirTools`）或其他插件使用的验证器在最后一次使用 15 分钟后释放。为服务器分配至少 1 GB，如果有通道在其他版本之外还使用 R5，则分配 2 GB：在 `<OIE_HOME>/conf/custom.vmoptions` 中单独一行添加 `-Xmx1g`（或更多），然后重启服务。
 
-**大小。** HAPI FHIR 及其库使 zip 约 80 MB。它们位于 `extensions/datatype-fhir/lib/` 中，在插件自己的类加载器中加载，因此永远不会与 OIE 自带的库冲突。
+Java 只有在垃圾回收后才会复用已释放的内存，而空闲的服务器几乎不回收，因此任务管理器始终显示最大值。要让服务器在空闲时回收并把内存还给 Windows，请在 `custom.vmoptions` 中再单独一行添加 `-XX:G1PeriodicGCInterval=60000`（空闲时每分钟回收一次）。不要编辑 `oieserver.vmoptions` 或 `oieservice.vmoptions`：两者都包含 `conf/custom.vmoptions`，因此该设置对服务和 `oieserver` 均生效。部署后的首次验证需要几秒钟；插件在通道部署时开始加载，之后一条报文只需几十毫秒。
+
+OIE 的默认堆内存只有 256 MB（`conf/base_includes.vmoptions` 中的 `-Xmx256m`，4.6.0 和 4.7.0 均如此；安装程序可能设置了更大值）。这不足以进行验证：第一条需要验证器的报文会因 `java.lang.OutOfMemoryError: Java heap space` 而失败（例如在加载 UCUM 单位时），报文停留在 RECEIVED 状态。因此在部署 FHIR 通道之前，请在 `conf/custom.vmoptions` 中设置 `-Xmx1g`，对于 `custom.vmoptions` 中尚无 `-Xmx` 行的全新或升级后的 4.7.0 服务器也是如此。
+
+**大小。** HAPI FHIR 及其库使 zip 约 117 MB（包含 R4、R4B 和 R5 的规范）。它们位于 `extensions/datatype-fhir/lib/` 中，在插件自己的类加载器中加载，因此永远不会与 OIE 自带的库冲突。
 
 ## 属性
 
 | 属性 | 默认值 | 功能 |
 | --- | --- | --- |
-| FHIR 版本 | R4 | 报文的 FHIR 版本。 |
-| 去除命名空间 | 开启 | 从转换器 XML 中移除 FHIR 命名空间（`text.div` 的 XHTML 命名空间保留），处理后还原。 |
+| FHIR 版本 | R4 | 报文的 FHIR 版本：R4、R4B 或 R5。用于验证以及 JSON 和 XML 之间的转换；Profile 包必须为相同版本。 |
+| 资源类型 | 空 | 连接器接受的资源类型，用逗号分隔，例如 `Patient, Observation, Bundle`。其他类型的报文，或包含其他类型条目的 Bundle，将被判定为无效；参见[资源类型](#资源类型)。留空则接受所有类型。 |
+| 转换器格式 | XML | 转换器处理的格式：使用 E4X 的 FHIR XML，或 FHIR JSON 的 JavaScript 对象（参见[转换器中的 JSON](#转换器中的-json)）。 |
+| 去除命名空间 | 开启 | 当转换器格式为 XML 时：从转换器 XML 中移除 FHIR 命名空间（`text.div` 的 XHTML 命名空间保留），处理后还原。 |
 | 输出格式 | JSON | 出站报文使用 FHIR JSON 或 FHIR XML。两者均由 FHIR 引擎按规范的元素顺序写入。 |
 | 格式化输出 | 开启 | 缩进 FHIR 引擎生成的 JSON 和 XML。 |
 | 验证入站 | 开启 | 验证每条入站报文。 |
@@ -44,6 +52,8 @@
 | 术语服务器 | 空 | 可选的 FHIR 术语服务器，用于验证器离线无法检查的代码。 |
 | 批处理拆分方式（批处理） | Bundle 条目 | *Bundle 条目*：每个 `Bundle.entry.resource` 为一条报文。*JavaScript*：自定义拆分器。仅在源连接器中 *Process Batch* 开启时使用；参见[批处理](#批处理)。 |
 
+**每个连接器使用自己的属性进行验证。** 数据类型为 FHIR 的目标连接器会使用其自身入站属性的设置再次验证报文，而不是源连接器的设置。按默认设置，它验证时不带您的 *Profile 包*，因此设置了 `meta.profile` 的报文会在那里失败，报错 *"Profile reference … has not been checked because it could not be found"*。请在目标连接器上关闭 *验证入站*：源连接器已经验证过报文，这样报文只被验证一次。如果某个目标连接器必须验证，请为其配置与源连接器相同的 *Profile 包*（和 *必需 Profile*）。
+
 ### 连接器映射
 
 入站验证会设置以下变量，即使无效报文被接受时也会设置：
@@ -55,7 +65,7 @@
 | `fhirIssues` | 每个问题一行：`error Patient.gender (line 1, column 39): ...` |
 | `fhirOperationOutcome` | 问题作为 FHIR `OperationOutcome` 资源（JSON），可直接返回给发送方 |
 | `mirth_type` | 资源类型，例如 `Patient` 或 `Bundle` |
-| `mirth_version` | `R4` |
+| `mirth_version` | *FHIR 版本*：`R4`、`R4B` 或 `R5` |
 
 例如，一个仅放行有效报文的源过滤器，*无效报文处理* 设为 *Accept*：
 
@@ -66,6 +76,21 @@ if ($('fhirValid') == false) {
 }
 return true;
 ```
+
+### 资源类型
+
+*资源类型* 限制连接器接受的资源类型，例如 `Patient, Observation, Bundle`。其他类型的报文将被判定为无效，并附带一条错误，例如：
+
+```
+error Encounter: Resource type Encounter is not in Resource Types (Patient, Observation, Bundle)
+```
+
+- 对于 Bundle，每个 `Bundle.entry.resource` 也会被检查（包括条目内嵌套 Bundle 的资源），因此列表中需要包含 `Bundle` 及其条目的类型。错误会指明条目：`Bundle.entry[1].resource`。
+- *无效报文处理* 决定如何处理，与验证错误相同：*Reject* 给出 ERROR 状态（并在自动生成响应时返回 HTTP `400`），*Accept* 处理报文并设置 `fhirValid` = `false`，错误存入 `fhirIssues` 和 `fhirOperationOutcome`。
+- 被拒绝的报文不再进一步验证。被接受的类型按未设置该属性时的方式验证。
+- 即使 *验证入站* 关闭，该检查仍然生效。此时连接器映射仅对被拒绝的报文设置验证变量。
+- 名称区分大小写，可用逗号、分号或空格分隔。Contained（内含）资源不被检查。开启 *Process Batch* 时，每个条目都是独立报文并单独检查。
+- 这是对输入的检查，而非节省内存：无论列表如何，验证器都会加载 *FHIR 版本* 的完整规范（参见[开发指南](docs/development.md#validation)）。
 
 ## 批处理
 
@@ -101,7 +126,7 @@ FHIR 客户端期望收到 `OperationOutcome`，当发送了无效内容时期�
 | 被过滤 | "The message was filtered and not processed further." | 200 |
 | 任何其他错误（例如在转换器中） | 错误，代码为 `exception` | 500 |
 
-HTTP 状态和内容类型被放入通道映射。在 **HTTP Listener** 设置中使用它们：
+HTTP 状态和内容类型被放入通道映射和源映射（因此也会显示在报文的源映射中）。在 **HTTP Listener** 设置中使用它们：
 
 | HTTP Listener 设置 | 值 |
 | --- | --- |
@@ -116,8 +141,10 @@ HTTP 状态和内容类型被放入通道映射。在 **HTTP Listener** 设置�
 
 将包或文件放在服务器上，在 *Profile 包* 中输入文件夹路径，例如 `C:\fhir\profiles` 或 `/opt/oie/fhir/profiles`。文件夹会连同子文件夹一起读取。支持：
 
-- **FHIR 包**（`.tgz`），从 [packages.fhir.org](https://packages.fhir.org) 或 [simplifier.net](https://simplifier.net) 下载。包含包所依赖的每个包（`hl7.fhir.r4.core` 已内置）。对于荷兰 Profile：`nictiz.fhir.nl.r4.nl-core` 和 `nictiz.fhir.nl.r4.zib2020`。
+- **FHIR 包**（`.tgz`），从 [packages.fhir.org](https://packages.fhir.org) 或 [simplifier.net](https://simplifier.net) 下载。包含包所依赖的每个包（所选版本的核心包，如 `hl7.fhir.r4.core`，已内置）。对于荷兰 Profile：`nictiz.fhir.nl.r4.nl-core` 和 `nictiz.fhir.nl.r4.zib2020`。
 - **一致性资源**：JSON 或 XML 格式的 StructureDefinition、ValueSet、CodeSystem、ConceptMap 和 NamingSystem 文件。
+
+包和 Profile 必须与通道的 *FHIR 版本* 匹配：构建验证器时会检查包的 `fhirVersions` 和 StructureDefinition 的 `fhirVersion`。在 R5 通道上使用 R4 包（如 Nictiz zib2020）会被拒绝，报错类似 *"Package nictiz.fhir.nl.r4.zib2020#0.12.1-beta.1 is for FHIR 4.0.1, but FHIR Version is R5 (5.0.0)"*，在您修正设置之前每条报文都会如此。
 
 资源根据其 `meta.profile` 中的 Profile 进行验证。设置 *必需 Profile* 可将每条报文对照一个 Profile 验证，例如 `http://nictiz.nl/fhir/StructureDefinition/nl-core-Patient`。未知的 Profile 会报错。
 
@@ -137,6 +164,22 @@ msg.appendChild(<birthDate value="1980-01-01"/>);
 
 您无需考虑 FHIR 元素顺序：转换器处理后，FHIR 引擎会按规范顺序重新写入报文（JSON 或 XML）。因此 `birthDate` 最终会排在 `gender` 后面，无论您在哪里追加它。规范中不存在的元素会被拒绝并报错，而不是被丢弃。
 
+### 转换器中的 JSON
+
+在入站属性中将 *转换器格式* 设为 **JSON**，`msg` 就是 FHIR JSON 的 JavaScript 对象，与大多数 FHIR 工具一致：
+
+```javascript
+var family = msg.name[0].family;
+msg.gender = 'female';
+msg.identifier = (msg.identifier || []).concat([{ system: 'http://example.org/mrn', value: '12345' }]);
+```
+
+- 报文仍可以 JSON 或 XML 入站；XML 会被转换为 JSON 供转换器使用。JSON 则按入站原样传递。
+- 出站报文由 `msg` 生成，并由 FHIR 引擎按规范顺序写入，格式为 *输出格式* 中设置的 JSON 或 XML。拼写错误的元素（`msg.gendr`）会被拒绝并报错。
+- **小数会丢失末尾的零**：JavaScript 将 `1.50` 变为数字 `1.5`，因此出站报文显示 `1.5`。在 FHIR 中，小数位数可能承载含义（精度）。对于在意这一点的报文，请将 *转换器格式* 保持为 XML。
+- 在出站属性中，*转换器格式* 设置出站模板（`tmp`）的格式。
+- 在管理器中，请使用 FHIR JSON 报文作为入站模板：将 XML 模板转换为 JSON 需要 FHIR 引擎，而它只在服务器上运行。
+
 ### 在脚本中使用
 
 `FhirTools` 可在任何脚本中验证和转换，例如 HTTP 响应：
@@ -152,7 +195,7 @@ if (!result.isValid()) {
 var json = FhirTools.toJson(msg.toString()); // transformer XML to JSON
 ```
 
-`FhirTools.validate(resource, requiredProfile, profilePackages)` 对照您自己的 Profile 验证。`validate` 和 `toJson` 接受带或不带 FHIR 命名空间的 FHIR XML，因此在 *去除命名空间* 开启时 `msg.toString()` 可在转换器中使用。
+`FhirTools.validate(resource, requiredProfile, profilePackages)` 对照您自己的 Profile 验证。这些函数使用 R4；对于 R4B 或 R5，将版本作为最后一个参数添加：`FhirTools.validate(resource, requiredProfile, profilePackages, 'R5')`、`FhirTools.toJson(xml, 'R5')`、`FhirTools.toXml(json, 'R5')`。`validate` 和 `toJson` 接受带或不带 FHIR 命名空间的 FHIR XML，因此在 *去除命名空间* 开启时 `msg.toString()` 可在转换器中使用。
 
 ### 参考列表
 
@@ -189,7 +232,7 @@ XXE 攻击在 XML 报文中隐藏带有实体声明的 DTD，使解析器读取�
 
 ## 构建
 
-JDK 17 和 Maven。引擎 jar（`com.mirth.connect:*:4.6.0`）必须在本地 Maven 仓库中。
+JDK 17 和 Maven。引擎 jar（`com.mirth.connect:*:4.6.0`）必须在本地 Maven 仓库中：运行 `bash .github/scripts/install-oie-jars.sh 4.6.0` 可将其放入。每次推送和拉取请求都会在 GitHub 上针对 OIE 4.6.0 和 4.7.0 进行构建和测试，包括在运行中的引擎里进行冒烟测试。
 
 ```bash
 mvn package

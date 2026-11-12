@@ -43,6 +43,9 @@ public final class FhirEngineLoader {
         if (engine == null && error == null) {
             try {
                 engine = load();
+                // Started here, so idle validators are released whoever built them (a FHIR channel,
+                // FhirTools in a script, or another plugin using the engine).
+                FhirValidatorUsage.startPeriodicRelease(engine);
             } catch (Throwable t) {
                 error = t.getClass().getSimpleName() + (t.getMessage() != null ? ": " + t.getMessage() : "");
             }
@@ -50,6 +53,11 @@ public final class FhirEngineLoader {
         if (engine == null) {
             throw new IllegalStateException("The FHIR engine is not available (" + error + ").");
         }
+        return engine;
+    }
+
+    /** The engine if it was loaded already, otherwise null; never loads it. */
+    public static synchronized FhirEngine loadedEngine() {
         return engine;
     }
 
