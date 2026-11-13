@@ -1,10 +1,10 @@
 <pluginMetaData path="datatype-fhir">
-	<name>FHIR Data Type</name>
+	<name>FHIR 数据类型</name>
 	<author>X Connections</author>
 	<pluginVersion>1.6.1</pluginVersion>
 	<mirthVersion>4.6.0,4.7.0</mirthVersion>
 	<url>https://x-connections.info</url>
-	<description>This plugin provides the HL7 FHIR data type: FHIR JSON and XML in, FHIR XML in the transformer, FHIR JSON or XML out, with validation against the FHIR specification and your own profiles (HAPI FHIR).</description>
+	<description>本插件提供 HL7 FHIR 数据类型：入站支持 FHIR JSON 和 XML，转换器中支持 FHIR XML，出站支持 FHIR JSON 或 XML，并可依据 FHIR 规范及您自定义的剖面（HAPI FHIR）进行校验。</description>
 	<serverClasses>
 		<string>com.mirth.connect.plugins.datatypes.fhir.server.FhirDataTypeServerPlugin</string>
 		<string>com.mirth.connect.plugins.datatypes.fhir.server.FhirChannelPlugin</string>
